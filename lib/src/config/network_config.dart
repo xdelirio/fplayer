@@ -25,9 +25,16 @@ class FRetryPolicy {
   final Duration maxDelay;
 
   /// Delay before attempt number [attempt], counting from zero.
+  ///
+  /// The shift is clamped before it is taken: past 62 places `1 << attempt` wraps to a negative
+  /// number, the cap below never trips, and the backoff turns into a tight retry loop — which is
+  /// the opposite of what a backoff is for.
   Duration delayFor(int attempt) {
-    final ms = baseDelay.inMilliseconds * (1 << attempt);
-    return ms >= maxDelay.inMilliseconds ? maxDelay : Duration(milliseconds: ms);
+    final steps = attempt.clamp(0, 30);
+    final ms = baseDelay.inMilliseconds * (1 << steps);
+    return ms >= maxDelay.inMilliseconds || ms < 0
+        ? maxDelay
+        : Duration(milliseconds: ms);
   }
 }
 

@@ -87,6 +87,12 @@ class FPlayerError {
   /// Whether retrying the exact same source could plausibly succeed.
   final bool isRetryable;
 
+  /// The code an engine named, or null when the name is not one of these.
+  ///
+  /// For a failure that arrives as a bare platform error rather than the classified payload the
+  /// native side normally sends.
+  static FPlayerErrorCode? codeByName(String? name) => _codeByName[name];
+
   static const Map<Object?, FPlayerErrorCode> _codeByName = {
     'network': FPlayerErrorCode.network,
     'timeout': FPlayerErrorCode.timeout,

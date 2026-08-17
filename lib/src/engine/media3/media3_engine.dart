@@ -28,6 +28,10 @@ class FMedia3Engine implements FPlaybackEngine {
   StreamSubscription<Object?>? _eventSubscription;
   bool _isDisposed = false;
 
+  /// The `create` round-trip while it is in flight, so a disposal that lands during it can wait
+  /// for the player it has to release rather than leave it running native-side.
+  Future<void>? _creating;
+
   @override
   int? get textureId => _textureId;
 
@@ -35,26 +39,48 @@ class FMedia3Engine implements FPlaybackEngine {
   Stream<FEngineSignal> get signals => _signals.stream;
 
   @override
-  Future<void> create(FPlayerConfig config) async {
-    if (_playerId != null) {
+  Future<void> create(FPlayerConfig config) {
+    if (_playerId != null || _creating != null) {
       throw StateError('FMedia3Engine has already been created');
     }
-
-    final result = await _main.invokeMapMethod<String, Object?>('create', {
-      'config': config.toMap(),
-    });
-    if (result == null) {
-      throw PlatformException(code: 'create_failed', message: 'Native player was not created');
+    if (_isDisposed) {
+      throw StateError('FMedia3Engine cannot be created after being disposed');
     }
 
-    final playerId = (result['playerId']! as num).toInt();
-    _playerId = playerId;
-    _textureId = (result['textureId']! as num).toInt();
-    _channel = MethodChannel('dev.chikenare.fplayer/player/$playerId');
+    // Held so `dispose` can await it: the native player exists from the moment this returns,
+    // whether or not anyone is still waiting for it.
+    return _creating = _create(config);
+  }
 
-    _eventSubscription = EventChannel('dev.chikenare.fplayer/player/$playerId/events')
-        .receiveBroadcastStream()
-        .listen(_onNativeEvent, onError: _onNativeStreamError);
+  Future<void> _create(FPlayerConfig config) async {
+    try {
+      final result = await _main.invokeMapMethod<String, Object?>('create', {
+        'config': config.toMap(),
+      });
+      if (result == null) {
+        throw PlatformException(code: 'create_failed', message: 'Native player was not created');
+      }
+
+      final playerId = (result['playerId']! as num).toInt();
+
+      // Disposal arrived while the native side was building the player. It is alive now and
+      // nobody holds it, so release it here — the caller's `dispose` could not, having had no id
+      // to release when it ran.
+      if (_isDisposed) {
+        await _main.invokeMethod<void>('dispose', {'playerId': playerId});
+        return;
+      }
+
+      _playerId = playerId;
+      _textureId = (result['textureId']! as num).toInt();
+      _channel = MethodChannel('dev.chikenare.fplayer/player/$playerId');
+
+      _eventSubscription = EventChannel('dev.chikenare.fplayer/player/$playerId/events')
+          .receiveBroadcastStream()
+          .listen(_onNativeEvent, onError: _onNativeStreamError);
+    } finally {
+      _creating = null;
+    }
   }
 
   @override
@@ -158,23 +184,47 @@ class FMedia3Engine implements FPlaybackEngine {
     );
   }
 
+  /// Releases the native player, its texture and both channels.
+  ///
+  /// Every step runs even if an earlier one throws: a `MissingPluginException` on the way out —
+  /// routine when the Flutter engine is detaching — must not be the reason a stream controller
+  /// stays open for the life of the process.
   @override
   Future<void> dispose() async {
     if (_isDisposed) return;
     _isDisposed = true;
 
-    await _eventSubscription?.cancel();
+    // A create in flight owns a player that does not exist yet. Waiting for it is what makes the
+    // release below reach that player instead of missing it by a few milliseconds.
+    final creating = _creating;
+    if (creating != null) {
+      try {
+        await creating;
+      } on Object {
+        // A failed create has nothing to release.
+      }
+    }
+
+    try {
+      await _eventSubscription?.cancel();
+    } on Object {
+      // Already gone; the release below is what matters.
+    }
     _eventSubscription = null;
 
     final playerId = _playerId;
-    if (playerId != null) {
-      _channel?.setMethodCallHandler(null);
-      await _main.invokeMethod<void>('dispose', {'playerId': playerId});
-    }
+    _channel?.setMethodCallHandler(null);
     _channel = null;
     _playerId = null;
+    _textureId = null;
 
-    await _signals.close();
+    try {
+      if (playerId != null) {
+        await _main.invokeMethod<void>('dispose', {'playerId': playerId});
+      }
+    } finally {
+      await _signals.close();
+    }
   }
 
   Future<void> _invoke(String method, [Map<String, Object?>? arguments]) async {
@@ -192,15 +242,37 @@ class FMedia3Engine implements FPlaybackEngine {
     }
   }
 
+  /// A failure of the event channel itself, rather than one the player reported through it.
+  ///
+  /// The native side classifies what it can and sends it as the error payload; anything arriving
+  /// here is the channel breaking. The details it does carry are kept — flattening a classified
+  /// `PlatformException` into `unknown` throws away the one thing the UI branches on, and
+  /// marking a setup failure retryable spends the whole retry ladder before saying anything.
   void _onNativeStreamError(Object error) {
     if (_signals.isClosed) return;
-    final message = error is PlatformException ? (error.message ?? error.code) : error.toString();
+
+    if (error is PlatformException) {
+      final details = error.details;
+      _signals.add(
+        FEngineFailed(
+          details is Map
+              ? FPlayerError.fromMap(details.cast<String, Object?>())
+              : FPlayerError(
+                  code: FPlayerError.codeByName(error.code) ?? FPlayerErrorCode.unknown,
+                  message: error.message ?? error.code,
+                  nativeCode: error.code,
+                  isRetryable: false,
+                ),
+        ),
+      );
+      return;
+    }
+
     _signals.add(
       FEngineFailed(
         FPlayerError(
           code: FPlayerErrorCode.unknown,
-          message: message,
-          isRetryable: true,
+          message: error.toString(),
         ),
       ),
     );

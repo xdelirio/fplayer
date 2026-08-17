@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter/widgets.dart';
 
 import '../config/background_config.dart';
@@ -42,6 +43,25 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<FEngineSignal>? _signals;
   Timer? _loadingTimeout;
   Timer? _retryTimer;
+
+  /// The creation in flight, shared by every concurrent [initialize].
+  Future<void>? _initializing;
+
+  /// Where a seek asked the engine to go, until a progress tick arrives from around there.
+  Duration? _pendingSeek;
+
+  /// Ticks ignored so far while waiting for that seek to land.
+  int _staleProgressTicks = 0;
+
+  /// How far a progress tick may sit from the seek target and still count as having landed.
+  static const _seekSettleWindow = Duration(seconds: 2);
+
+  /// How many ticks to wait before believing the engine over the seek that was asked for.
+  ///
+  /// A seek the engine silently refuses must not freeze the position readout for the session;
+  /// counting ticks rather than running a timer keeps that bound tied to the thing being
+  /// guarded against, and leaves nothing pending when playback is idle.
+  static const _maxStaleProgressTicks = 12;
 
   FPlayerValue _value = const FPlayerValue.idle();
   bool _isCreated = false;
@@ -89,17 +109,36 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
   ///
   /// Idempotent, and called automatically by [open]. Call it explicitly to have the texture ready
   /// before the source is known — it avoids a frame of empty layout.
-  Future<void> initialize() async {
-    if (_isCreated || _isDisposed) return;
+  ///
+  /// Concurrent calls share one creation: the documented `initialize(); open(src);` pattern from
+  /// a `State.initState`, where neither call can be awaited, would otherwise build two native
+  /// players and register this controller with the binding twice — and the binding only ever
+  /// removes one observer, which pins the controller for the life of the process.
+  Future<void> initialize() {
+    if (_isCreated || _isDisposed) return Future<void>.value();
+    return _initializing ??= _initialize();
+  }
 
-    await _engine.create(config);
+  Future<void> _initialize() async {
+    try {
+      await _engine.create(config);
+    } on Object catch (error, stack) {
+      // A player that cannot be created is a playback failure like any other. Left to propagate,
+      // it escapes into whatever called `open` — routinely a fire-and-forget from `initState` —
+      // and the UI sits on a spinner until the loading timeout invents a different reason.
+      _failWith(error, stack);
+      return;
+    } finally {
+      _initializing = null;
+    }
+
     if (_isDisposed) {
       await _engine.dispose();
       return;
     }
 
     _isCreated = true;
-    _signals = _engine.signals.listen(_onSignal);
+    _signals = _engine.signals.listen(_onSignal, onError: _failWith);
     WidgetsBinding.instance.addObserver(this);
     _update(
       _value.copyWith(
@@ -107,6 +146,23 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
         speed: config.playback.speed,
         isLooping: config.playback.loop,
       ),
+    );
+  }
+
+  /// Turns a thrown platform failure into the error state the UI already knows how to render.
+  void _failWith(Object error, [StackTrace? stack]) {
+    if (_isDisposed) return;
+    _onFailure(
+      error is FPlayerError
+          ? error
+          : FPlayerError(
+              code: FPlayerErrorCode.unknown,
+              message: error is PlatformException
+                  ? (error.message ?? error.code)
+                  : error.toString(),
+              nativeCode: error is PlatformException ? error.code : null,
+              isRetryable: true,
+            ),
     );
   }
 
@@ -177,7 +233,9 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     required int index,
   }) async {
     await initialize();
-    if (_isDisposed) return;
+    // `initialize` turns a failed creation into the error state rather than throwing, so this
+    // also covers "there is no engine to load anything into".
+    if (_isDisposed || !_isCreated) return;
 
     _cancelTimers();
     _hasInitialized = false;
@@ -206,7 +264,14 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _emit(FSourceOpened(source));
     _startLoadingTimeout();
 
-    await _engine.setSource(source);
+    try {
+      await _engine.setSource(source);
+    } on Object catch (error, stack) {
+      // The native side answers a load it cannot even start with a platform error rather than an
+      // error event. Without this the player waits out the whole loading timeout and then blames
+      // a timeout for something it was told about immediately.
+      _failWith(error, stack);
+    }
   }
 
   Future<void> play() async {
@@ -230,6 +295,9 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     if (!_isCreated) return;
     _cancelTimers();
     _hasInitialized = false;
+    // The next failure on this source deserves the whole retry ladder, not what a previous run
+    // left of it.
+    _retryAttempt = 0;
     await _engine.stop();
     _update(
       _value.copyWith(
@@ -259,6 +327,12 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
       ),
     );
     _emit(FSeeked(from: from, to: clamped));
+
+    // Held until the engine's own progress catches up, so a tick that was already in flight
+    // cannot drag the playhead back to where the viewer just left.
+    _pendingSeek = clamped;
+    _staleProgressTicks = 0;
+
     await _engine.seekTo(clamped);
   }
 
@@ -289,6 +363,9 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> setVolume(double volume) async {
     if (!_isCreated) return;
     final clamped = volume.clamp(0.0, 1.0);
+    // Every road to silence is a mute, not just the mute button: a volume gesture dragged to the
+    // bottom has to be what unmuting restores from, or the sound comes back at full blast.
+    if (clamped == 0 && _value.volume > 0) _volumeBeforeMute = _value.volume;
     _update(_value.copyWith(volume: clamped, isMuted: clamped == 0));
     _emit(FVolumeChanged(clamped));
     await _engine.setVolume(clamped);
@@ -299,7 +376,6 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     if (_value.isMuted) {
       await setVolume(_volumeBeforeMute == 0 ? 1 : _volumeBeforeMute);
     } else {
-      _volumeBeforeMute = _value.volume;
       await setVolume(0);
     }
   }
@@ -386,7 +462,7 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
       case AppLifecycleState.resumed:
         // Progress events stop while the app is away, so the seek bar would show a stale
         // position for one interval without this.
-        unawaited(syncFromEngine());
+        _fireAndForget(syncFromEngine());
 
       case AppLifecycleState.paused:
         _applyBackgroundPolicy();
@@ -405,19 +481,28 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
     switch (config.background.mode) {
       case FBackgroundMode.stop:
-        unawaited(stop());
+        _fireAndForget(stop());
       case FBackgroundMode.pause:
-        unawaited(pause());
+        _fireAndForget(pause());
       case FBackgroundMode.continueAudio:
         break;
     }
+  }
+
+  /// Runs a call nobody is waiting for, without letting a platform failure escape into the zone.
+  ///
+  /// Every one of these is triggered by something other than a user action — a lifecycle change,
+  /// a timer, a signal — so there is no call site to hand the error back to. Uncaught, it becomes
+  /// an app-level crash for a player that could simply have shown its error state.
+  void _fireAndForget(Future<void> call) {
+    unawaited(call.catchError(_failWith));
   }
 
   // endregion
 
   /// Retries the current source after a failure.
   Future<void> retry() async {
-    if (!_isCreated || _value.source == null) return;
+    if (!_isCreated || _isDisposed || _value.source == null) return;
     _cancelTimers();
     _retryAttempt = 0;
     _update(_value.copyWith(status: FPlayerStatus.loading, clearError: true));
@@ -500,14 +585,27 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
         _emit(FPlayingChanged(isPlaying: signal.isPlaying));
 
       case FEngineProgress():
+        // A progress tick sent before the engine acted on a seek still carries the old position.
+        // Applied verbatim it drags the playhead back to where the viewer just left, and the
+        // scrubber rubber-bands for a tick or two. The buffered ranges are current either way.
+        final isStale = _pendingSeek != null &&
+            (signal.position - _pendingSeek!).abs() > _seekSettleWindow &&
+            _staleProgressTicks < _maxStaleProgressTicks;
+        if (isStale) {
+          _staleProgressTicks++;
+        } else {
+          _pendingSeek = null;
+          _staleProgressTicks = 0;
+        }
+
         _update(
           _value.copyWith(
-            position: signal.position,
+            position: isStale ? null : signal.position,
             buffered: signal.buffered,
             bufferedAhead: signal.bufferedAhead,
           ),
         );
-        _emit(FPositionChanged(position: signal.position, buffered: signal.buffered));
+        _emit(FPositionChanged(position: _value.position, buffered: signal.buffered));
 
       case FEngineVideoSizeChanged():
         _update(
@@ -613,7 +711,7 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
       // Advance after the event, so a listener that wants to do something else on completion
       // still sees the item that just ended rather than the one replacing it.
       if (config.playback.autoAdvance && _value.hasPlaylist) {
-        unawaited(this.next());
+        _fireAndForget(this.next());
       }
     }
   }
@@ -640,7 +738,7 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
       _retryTimer?.cancel();
       _retryTimer = Timer(delay, () {
         if (_isDisposed || !_isCreated) return;
-        unawaited(_engine.retry());
+        _fireAndForget(_engine.retry());
         _startLoadingTimeout();
       });
       return;
@@ -694,8 +792,16 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _loadingTimeout = null;
     _retryTimer?.cancel();
     _retryTimer = null;
+    _pendingSeek = null;
+    _staleProgressTicks = 0;
   }
 
+  /// Releases the engine, the timers and the streams.
+  ///
+  /// Every step runs even if an earlier one throws. Disposal is routinely called from a
+  /// `State.dispose` that cannot await it, and a platform call failing on the way out — which is
+  /// ordinary while the Flutter engine detaches — must not leave the notifier and its two stream
+  /// controllers behind for the life of the process.
   @override
   Future<void> dispose() async {
     if (_isDisposed) return;
@@ -703,11 +809,20 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
     _cancelTimers();
     if (_isCreated) WidgetsBinding.instance.removeObserver(this);
-    await _signals?.cancel();
-    _signals = null;
-    await _engine.dispose();
-    await _events.close();
+    _isCreated = false;
 
-    super.dispose();
+    try {
+      await _signals?.cancel();
+    } on Object {
+      // Nothing left to hear from.
+    }
+    _signals = null;
+
+    try {
+      await _engine.dispose();
+    } finally {
+      await _events.close();
+      super.dispose();
+    }
   }
 }
