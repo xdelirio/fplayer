@@ -22,7 +22,6 @@
 | External subtitles with headers | Native (`SubtitleConfiguration`) | `setExternalSubtitle()`, no headers |
 | **Widevine DRM** | Yes | **Does not exist** |
 | PiP, MediaSession, notification, audio focus | `media3-session` + Activity PiP | All by hand |
-| Offline downloads | Media3's `DownloadManager` | No |
 | APK size | ~1-2 MB | **+10 MB per ABI** |
 | HW decoding | MediaCodec (default) | MediaCodec / FFmpeg |
 | **Software AV1 on Android < 12** | ❌ real gap | ✅ dav1d bundled |
@@ -322,7 +321,6 @@ Every phase is deliverable, compiles, and leaves the `example/` app working.
 | ✅ **8** | Robustness | Error taxonomy, retry with backoff, load timeout, live-edge handling, bitrate caps / data-saver mode | Network drop → reconnects on its own; fatal error → overlay with retry |
 | ✅ **9** | Playlist and chapters | Queue, autoplay next, skip intro/outro markers, chapters on the bar, "next episode" card | A whole series plays back to back |
 | ✅ **10** | Analytics | `FPlayerObserver` fed by Media3's `AnalyticsListener` (startup, rebuffers, dropped frames, bytes, real bitrate), optional HTTP reporter in a separate package | Metrics match actual playback |
-| ✅ **11** | Extras | ✅ offline downloads · ✅ `fvp` engine with codec fallback (sibling package) · ✅ Widevine DRM · dropped: Cast and screenshot | AV1 plays on an Android 10 |
 
 ---
 
@@ -343,7 +341,6 @@ Every phase is deliverable, compiles, and leaves the `example/` app working.
 
 1. **Naming convention**: I propose `FPlayer*` for the big public classes (`FPlayerController`, `FPlayerView`, `FPlayerConfig`) and `F*` for models and enums (`FPlayerSource`, `FAudioTrack`, `FVideoFit`).
 2. **Subtitle timing offset** (`setSubtitleOffset`), pulled out of phase 2. There is no clean route on Media3: `TextRenderer` is `final`, so you cannot shift the clock the renderer sees, and doing it in Dart would only allow delaying (a cue that runs early would have to be shown before the engine emits it). The two real ways out:
-   - **Download and parse external subtitles in Dart** instead of delegating them to Media3. That gives shifting in both directions, per-cue styling and zero round trips over the channel, in exchange for writing SRT/VTT/ASS parsers and a second code path alongside the embedded tracks.
    - **Wrap `SubtitleParser` natively** and shift the timings at parse time. Works in both directions and is little code, but the offset is fixed at load: changing it live forces a source reload.
 
    My recommendation is the second one if the adjustment is something you configure once, and the first if you want a live sync slider. Decide it when we reach phase 8.
@@ -384,17 +381,12 @@ Findings that cost time and are worth not rediscovering.
 - **Inferring a seek from position jumps is approximate.** It was replaced with a real `FSeeked` event emitted by the controller: a one-second correction was indistinguishable from clock drift.
 - **The PiP window does not reliably paint Flutter frames on the emulator.** The system does everything right (`mode=pinned`, correct aspect ratio, playback advancing) but the window comes up blank — even with a solid colour behind the video, so it is not the texture. One run in six does paint. It remains to be verified on physical hardware before considering the `PlatformView + SurfaceView` mode.
 
-### Phase 9 and downloads
+### Phase 9
 
 - **`previous` does not mean "previous item".** A few seconds in it means "go back to the start of this one", which is what that button does everywhere. Always jumping to the previous one feels hostile when someone just wants to restart what they are watching.
 - **`open()` clears the queue, `stop()` does not.** Opening a standalone source means "play this thing"; stopping means unloading the media but keeping the queue, so that `jumpTo` still works afterwards. An empty list in `setPlaylist` is the only case that means "there is no queue".
 - **Auto-advance *after* emitting `FCompleted`**, so a listener that wants to do something on finish still sees the item that ended and not the one replacing it.
-- **A downloaded adaptive stream still advertises qualities that are not on disk.** The manifest lists all five renditions even if only one was downloaded; with no network, the adaptive selector reaches for one that does not exist and the stream dies. The right fix is building the `MediaSource` from the `DownloadRequest`, which carries the stream keys that were actually downloaded. Progressive MP4 does not have this problem.
-- **The download cache is opened read-only for playback.** Otherwise ordinary streaming would keep filling the downloads directory with content the user never asked to keep, and the no-op evictor would never release it.
-- **Headers persist in the download index** so that a download resumed after a reboot can re-authenticate. That leaves a token on disk: use short-lived tokens.
 - **An odd-width frame breaks MediaCodec.** The bunny trailer on w3.org is 853×480 and the emulator's decoder fails to configure even though it reports `format_supported=YES`. The error taxonomy still classified it correctly ("this device cannot play this video"), but it is worth knowing when picking test content.
-- **With no `DownloadService` declared, nobody starts the queue.** That service is what normally calls `resumeDownloads()` when it is created; without it, an enqueued download stays `queued` forever. The case only shows up on device, not in tests.
-- **`DownloadHelper` does not describe progressive media.** Asking it about periods for a standalone MP4 throws `IllegalStateException` **with no message**, which reaches Dart as `PlatformException(create_failed, null)`. Two lessons: guard the progressive case (there are no renditions to choose, it is downloaded whole) and never let a null message cross the bridge.
 - **`fvp` costs 11.58 MB per ABI** — 30.4 MB with three — against 1-2 MB for all of Media3, and apps that never use it pay too: Gradle packages the `.so` files because the plugin is in the dependency graph, and Dart's tree-shaking does not touch them. That is why it lives in `fplayer_fvp` and not in the base package. Confirmed by measuring the APK with and without it.
 - **`fvp` 0.34 does not build with Flutter 3.47**: its `build.gradle` asserts on the `version` file at the SDK root, which Flutter no longer generates. Fixed in 0.38. It is exactly the kind of coupling you do not want in the base package.
 - **There is no L3 forcing in `MediaItem.DrmConfiguration`.** I invented a `forceL3` option and mapped it to a method that does something else; `javap` on the real artifact exposed it. Verify the API before exposing it, and delete the option rather than implement it wrong.

@@ -52,18 +52,6 @@ internal class QueuingEventSink : EventChannel.EventSink {
         done = true
     }
 
-    /**
-     * Puts the sink back into service after a non-terminal teardown.
-     *
-     * `endOfStream` is one-way — it closes the Dart broadcast stream, and a listener that
-     * subscribes afterwards gets a stream that is already done. A subsystem that can be stopped
-     * and started again has to stop *without* saying "never again".
-     */
-    fun reopen() {
-        done = false
-        queue.clear()
-    }
-
     private fun trim() {
         if (queue.size <= MAX_QUEUED) return
         queue.subList(0, queue.size - MAX_QUEUED).clear()

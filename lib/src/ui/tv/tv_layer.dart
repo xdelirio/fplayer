@@ -149,7 +149,16 @@ class FTvLayerState extends State<FTvLayer> {
     // ours?". Every control is a descendant of this node, so on the frame the chrome is taken
     // away that is still true — and it is exactly the case worth catching. When the answer is
     // no, the focus belongs to the app around the player and is none of this layer's business.
-    if (_parked.hasFocus && !_parked.hasPrimaryFocus) _parked.requestFocus();
+    if (_parked.hasFocus && !_parked.hasPrimaryFocus) {
+      _parked.requestFocus();
+      return;
+    }
+
+    // Nobody at all holds focus yet: the first frame of a remote-first player whose chrome
+    // starts away. There is nothing to take focus *from*, and without this the player has no
+    // focusable node and no key handling — every press on the remote goes nowhere.
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary == null || primary is FocusScopeNode) _parked.requestFocus();
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {

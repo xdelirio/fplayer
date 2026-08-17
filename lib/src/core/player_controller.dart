@@ -53,6 +53,9 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
   /// The creation in flight, shared by every concurrent [initialize].
   Future<void>? _initializing;
 
+  /// Counts loads, so one interrupted by a `stop` or by another `open` cannot finish on top.
+  int _openGeneration = 0;
+
   /// Where a seek asked the engine to go, until a progress tick arrives from around there.
   Duration? _pendingSeek;
 
@@ -242,13 +245,26 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   // endregion
 
+  /// Loads [source], building the player first if there is not one yet.
+  ///
+  /// [isRetry] marks an attempt the retry ladder made on its own rather than something the
+  /// viewer asked for. Those must not announce a new source — every `FSourceOpened` starts a
+  /// fresh analytics session, so a ladder that re-opened would report one play as several — and
+  /// must not reset the budget they are spending.
   Future<void> _open(
     FPlayerSource source, {
     required List<FPlayerSource> playlist,
     required int index,
+    bool isRetry = false,
   }) async {
     _cancelTimers();
     _hasInitialized = false;
+    // Reset here rather than after the engine exists: a creation that keeps failing never
+    // reaches the far side, and the budget stayed spent for every later source and for the
+    // Try again button.
+    if (!isRetry) _retryAttempt = 0;
+
+    final generation = ++_openGeneration;
 
     // Recorded before the engine is built, not after. A creation that fails otherwise leaves an
     // error state with no source in it — nothing for the retry ladder to re-attempt, nothing for
@@ -273,14 +289,16 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
         hasMediaSession: _value.hasMediaSession,
       ),
     );
-    _emit(FSourceOpened(source));
+    if (!isRetry) _emit(FSourceOpened(source));
 
     await initialize();
     // `initialize` turns a failed creation into the error state rather than throwing, so this
     // also covers "there is no engine to load anything into".
     if (_isDisposed || !_isCreated) return;
+    // And a `stop` — or another `open` — that landed while the player was being built: loading
+    // this source now would undo what the viewer asked for a moment ago.
+    if (generation != _openGeneration) return;
 
-    _retryAttempt = 0;
     _startLoadingTimeout();
 
     try {
@@ -314,6 +332,8 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     if (!_isCreated) return;
     _cancelTimers();
     _hasInitialized = false;
+    // Nothing a load in flight does from here on is wanted.
+    _openGeneration++;
     // The next failure on this source deserves the whole retry ladder, not what a previous run
     // left of it.
     _retryAttempt = 0;
@@ -532,12 +552,15 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     if (source == null) return;
 
     // No engine means the failure was the *creation*, and re-preparing a player that does not
-    // exist does nothing. Opening the source again is the retry in that case.
+    // exist does nothing. Opening the source again is the retry in that case — with a fresh
+    // budget, because this is the viewer asking, but without announcing a new source.
     if (!_isCreated) {
+      _retryAttempt = 0;
       await _open(
         source,
         playlist: _value.playlist,
         index: _value.currentIndex,
+        isRetry: true,
       );
       return;
     }
@@ -785,7 +808,12 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
           final source = _value.source;
           if (source != null) {
             _fireAndForget(
-              _open(source, playlist: _value.playlist, index: _value.currentIndex),
+              _open(
+                source,
+                playlist: _value.playlist,
+                index: _value.currentIndex,
+                isRetry: true,
+              ),
             );
           }
           return;
