@@ -1,0 +1,385 @@
+import 'package:flutter/material.dart' show Icons;
+import 'package:flutter/widgets.dart';
+
+import '../../core/player_status.dart';
+import '../player_scope.dart';
+import '../time_format.dart';
+import '../video_fit.dart';
+import 'player_button.dart';
+import 'progress_bar.dart';
+
+/// The default chrome: a title row on top, transport controls in the middle, a seek bar and
+/// buttons at the bottom.
+///
+/// Every band is replaceable through the builder parameters on `FPlayerView`; this is what fills
+/// in when they are not given.
+class FControlsOverlay extends StatelessWidget {
+  const FControlsOverlay({
+    required this.ui,
+    this.title,
+    this.subtitle,
+    this.topBar,
+    this.bottomBar,
+    this.center,
+    this.actions = const [],
+    this.previewBuilder,
+    super.key,
+  });
+
+  final FPlayerUi ui;
+  final String? title;
+  final String? subtitle;
+
+  final Widget? topBar;
+  final Widget? bottomBar;
+  final Widget? center;
+
+  /// Extra controls appended to the bottom row, before the fullscreen button.
+  final List<Widget> actions;
+
+  /// Preview shown above the seek bar thumb while scrubbing.
+  final Widget Function(BuildContext context, Duration position)? previewBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ui.theme;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // A gradient rather than a flat veil: the picture stays visible in the middle, where
+        // there is nothing to read, and darkens exactly where the text sits.
+        IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [theme.scrim, const Color(0x00000000), theme.scrim],
+                stops: const [0, 0.45, 1],
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: topBar ?? _TopBar(ui: ui, title: title, subtitle: subtitle),
+        ),
+        Center(child: center ?? _CenterControls(ui: ui)),
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: bottomBar ??
+              _BottomBar(ui: ui, actions: actions, previewBuilder: previewBuilder),
+        ),
+      ],
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.ui, this.title, this.subtitle});
+
+  final FPlayerUi ui;
+  final String? title;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ui.theme;
+    final config = ui.config;
+    final l10n = ui.localizations;
+
+    final source = ui.controller.value.source;
+    final resolvedTitle = title ?? source?.title;
+    final resolvedSubtitle = subtitle ?? source?.subtitle;
+
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: theme.padding,
+        child: Row(
+          children: [
+            if (config.showBackButton)
+              FPlayerButton(
+                icon: Icons.arrow_back,
+                theme: theme,
+                semanticLabel: l10n.back,
+                onPressed: ui.back,
+              ),
+            if (config.showTitle && resolvedTitle != null) ...[
+              SizedBox(width: theme.spacing),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      resolvedTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.titleStyle.copyWith(color: theme.foreground),
+                    ),
+                    if (resolvedSubtitle != null)
+                      Text(
+                        resolvedSubtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.subtitleStyle.copyWith(color: theme.mutedForeground),
+                      ),
+                  ],
+                ),
+              ),
+            ] else
+              const Spacer(),
+            if (config.showLockButton)
+              FPlayerButton(
+                icon: Icons.lock_open,
+                theme: theme,
+                semanticLabel: l10n.lock,
+                onPressed: () => ui.setLocked(locked: true),
+              ),
+            if (config.showPipButton && ui.controller.value.isPipSupported)
+              FPlayerButton(
+                icon: Icons.picture_in_picture_alt,
+                theme: theme,
+                semanticLabel: l10n.pictureInPicture,
+                onPressed: ui.controller.enterPip,
+              ),
+            if (config.showSettingsButton)
+              FPlayerButton(
+                icon: Icons.settings,
+                theme: theme,
+                semanticLabel: l10n.settings,
+                onPressed: ui.openSettings,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CenterControls extends StatelessWidget {
+  const _CenterControls({required this.ui});
+
+  final FPlayerUi ui;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ui.theme;
+    final config = ui.config;
+    final l10n = ui.localizations;
+    final controller = ui.controller;
+    final value = controller.value;
+
+    // A spinner in the middle would sit exactly where the play button is; showing both at once
+    // reads as a broken control, so the transport steps aside while the player is waiting — for
+    // data or for a network that is not there.
+    if (value.status.isWaiting || value.isWaitingForNetwork) {
+      return const SizedBox.shrink();
+    }
+
+    final isCompleted = value.isCompleted;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (config.showTrackButtons && value.hasPlaylist)
+          FPlayerButton(
+            icon: Icons.skip_previous,
+            theme: theme,
+            size: theme.primaryIconSize * 0.6,
+            semanticLabel: l10n.previous,
+            onPressed: controller.previous,
+          ),
+        if (config.showSkipButtons)
+          FPlayerButton(
+            icon: Icons.replay_10,
+            theme: theme,
+            size: theme.primaryIconSize * 0.65,
+            semanticLabel: l10n.rewind,
+            onPressed: value.isSeekable ? controller.skipBackward : null,
+          ),
+        SizedBox(width: theme.spacing * 2),
+        FPlayerButton(
+          icon: isCompleted
+              ? Icons.replay
+              : value.isPlaying
+                  ? Icons.pause
+                  : Icons.play_arrow,
+          theme: theme,
+          size: theme.primaryIconSize,
+          autofocus: true,
+          semanticLabel: isCompleted
+              ? l10n.replay
+              : value.isPlaying
+                  ? l10n.pause
+                  : l10n.play,
+          onPressed: controller.togglePlayPause,
+        ),
+        SizedBox(width: theme.spacing * 2),
+        if (config.showSkipButtons)
+          FPlayerButton(
+            icon: Icons.forward_10,
+            theme: theme,
+            size: theme.primaryIconSize * 0.65,
+            semanticLabel: l10n.forward,
+            onPressed: value.isSeekable ? controller.skipForward : null,
+          ),
+        if (config.showTrackButtons && value.hasPlaylist)
+          FPlayerButton(
+            icon: Icons.skip_next,
+            theme: theme,
+            size: theme.primaryIconSize * 0.6,
+            semanticLabel: l10n.next,
+            onPressed: value.hasNext ? controller.next : null,
+          ),
+      ],
+    );
+  }
+}
+
+class _BottomBar extends StatelessWidget {
+  const _BottomBar({
+    required this.ui,
+    required this.actions,
+    this.previewBuilder,
+  });
+
+  final FPlayerUi ui;
+  final List<Widget> actions;
+  final Widget Function(BuildContext context, Duration position)? previewBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ui.theme;
+    final config = ui.config;
+    final l10n = ui.localizations;
+    final controller = ui.controller;
+    final value = controller.value;
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: theme.padding,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (config.showSeekBar) ...[
+              Row(
+                children: [
+                  Text(
+                    formatMediaTime(ui.displayPosition, reference: value.duration),
+                    style: theme.timestampStyle.copyWith(color: theme.foreground),
+                  ),
+                  SizedBox(width: theme.spacing),
+                  Expanded(
+                    child: FProgressBar(ui: ui, previewBuilder: previewBuilder),
+                  ),
+                  SizedBox(width: theme.spacing),
+                  _TrailingTime(ui: ui),
+                ],
+              ),
+              SizedBox(height: theme.spacing / 2),
+            ],
+            Row(
+              children: [
+                if (config.showMuteButton)
+                  FPlayerButton(
+                    icon: value.isMuted ? Icons.volume_off : Icons.volume_up,
+                    theme: theme,
+                    isActive: value.isMuted,
+                    semanticLabel: value.isMuted ? l10n.unmute : l10n.mute,
+                    onPressed: controller.toggleMute,
+                  ),
+                if (config.showSpeedButton)
+                  FPlayerTextButton(
+                    label: formatPlaybackSpeed(value.speed),
+                    theme: theme,
+                    semanticLabel: l10n.speed,
+                    onPressed: ui.openSettings,
+                  ),
+                if (config.showFitButton)
+                  FPlayerButton(
+                    icon: ui.fit == FVideoFit.cover
+                        ? Icons.fullscreen_exit
+                        : Icons.aspect_ratio,
+                    theme: theme,
+                    semanticLabel: 'Fit: ${ui.fit.name}',
+                    onPressed: ui.cycleFit,
+                  ),
+                ...actions,
+                const Spacer(),
+                if (config.showFullscreenButton)
+                  FPlayerButton(
+                    icon: ui.isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                    theme: theme,
+                    semanticLabel:
+                        ui.isFullscreen ? l10n.exitFullscreen : l10n.enterFullscreen,
+                    onPressed: ui.toggleFullscreen,
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Duration, time remaining, or a live badge that doubles as "jump to the edge".
+class _TrailingTime extends StatelessWidget {
+  const _TrailingTime({required this.ui});
+
+  final FPlayerUi ui;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ui.theme;
+    final value = ui.controller.value;
+
+    if (value.isLive) {
+      final isAtEdge = value.duration == null ||
+          (value.duration! - value.position) < const Duration(seconds: 10);
+
+      return GestureDetector(
+        onTap: ui.controller.seekToLive,
+        behavior: HitTestBehavior.opaque,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isAtEdge ? theme.accent : theme.mutedForeground,
+              ),
+            ),
+            SizedBox(width: theme.spacing / 2),
+            Text(
+              ui.localizations.live,
+              style: theme.timestampStyle.copyWith(
+                color: isAtEdge ? theme.foreground : theme.mutedForeground,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final duration = value.duration ?? Duration.zero;
+    final text = ui.config.showRemainingTime
+        ? '-${formatMediaTime(duration - ui.displayPosition, reference: duration)}'
+        : formatMediaTime(duration);
+
+    return Text(
+      text,
+      style: theme.timestampStyle.copyWith(color: theme.mutedForeground),
+    );
+  }
+}

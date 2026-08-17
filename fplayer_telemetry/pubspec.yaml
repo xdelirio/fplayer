@@ -1,0 +1,31 @@
+name: fplayer_telemetry
+description: "Telemetría de reproducción para fplayer: cola persistente en disco, envío por lotes y reintentos con backoff."
+version: 0.1.0
+homepage: https://github.com/chikenare/fplayer
+repository: https://github.com/chikenare/fplayer/tree/main/fplayer_telemetry
+
+# The path dependency on the sibling package is what makes this unpublishable today. Swap it for
+# a hosted constraint on `fplayer` and drop this line when the two are released together.
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  fplayer:
+    path: ../
+  http: ^1.2.0
+  path_provider: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+topics:
+  - video
+  - analytics
+  - telemetry
