@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
@@ -8,7 +9,7 @@ import '../time_format.dart';
 import '../video_fit.dart';
 
 /// Transient thing to show in the middle of the picture after a gesture.
-enum _FeedbackKind { seekForward, seekBackward, volume, brightness, speed }
+enum _FeedbackKind { volume, brightness, speed }
 
 /// Touch handling over the video surface.
 ///
@@ -39,11 +40,19 @@ class _FGestureLayerState extends State<FGestureLayer> {
   double _feedbackValue = 0;
   Timer? _feedbackTimer;
 
+  /// Which side is currently rippling, and how many steps have piled up on it. Null means no
+  /// ripple is on screen.
+  bool? _isSeekingForward;
+  int _seekSteps = 0;
+  Timer? _seekTimer;
+  double _lastTapX = 0;
+
   FPlayerUi get _ui => widget.ui;
 
   @override
   void dispose() {
     _feedbackTimer?.cancel();
+    _seekTimer?.cancel();
     super.dispose();
   }
 
@@ -55,7 +64,10 @@ class _FGestureLayerState extends State<FGestureLayer> {
       builder: (context, constraints) {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: gestures.tapTogglesControls ? _ui.toggleControls : null,
+          onTapDown: (details) => _lastTapX = details.localPosition.dx,
+          onTap: gestures.tapTogglesControls || gestures.doubleTapSeeks
+              ? () => _onTap(constraints.maxWidth)
+              : null,
           onDoubleTapDown: gestures.doubleTapSeeks
               ? (details) => _onDoubleTap(details.localPosition, constraints.maxWidth)
               : null,
@@ -68,11 +80,27 @@ class _FGestureLayerState extends State<FGestureLayer> {
           onScaleStart: (details) => _onScaleStart(details, constraints),
           onScaleUpdate: (details) => _onScaleUpdate(details, constraints),
           onScaleEnd: (_) => _onScaleEnd(),
-          child: _Feedback(
-            ui: _ui,
-            kind: _feedback,
-            text: _feedbackText,
-            value: _feedbackValue,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _Feedback(
+                ui: _ui,
+                kind: _feedback,
+                text: _feedbackText,
+                value: _feedbackValue,
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: _isSeekingForward == null
+                    ? const SizedBox.expand()
+                    : _SeekRipple(
+                        key: ValueKey(_isSeekingForward),
+                        ui: _ui,
+                        isForward: _isSeekingForward!,
+                        seconds: _ui.controller.config.playback.seekStep.inSeconds * _seekSteps,
+                      ),
+              ),
+            ],
           ),
         );
       },
@@ -84,22 +112,56 @@ class _FGestureLayerState extends State<FGestureLayer> {
   void _onDoubleTap(Offset position, double width) {
     if (_ui.isLocked) return;
 
-    final third = width / 3;
-    if (position.dx < third) {
-      _ui.controller.skipBackward();
-      _showFeedback(
-        _FeedbackKind.seekBackward,
-        text: '-${_ui.controller.config.playback.seekStep.inSeconds}s',
-      );
-    } else if (position.dx > width - third) {
-      _ui.controller.skipForward();
-      _showFeedback(
-        _FeedbackKind.seekForward,
-        text: '+${_ui.controller.config.playback.seekStep.inSeconds}s',
-      );
-    } else {
+    final side = _sideAt(position.dx, width);
+    if (side == null) {
       _ui.controller.togglePlayPause();
+      return;
     }
+    _addSeekStep(forward: side);
+  }
+
+  /// A plain tap, once the double-tap recogniser has given up on a second one.
+  ///
+  /// While the ripple is up, a single tap on the same side adds another step — the same shortcut
+  /// YouTube has, and the reason nobody double-taps four times to skip forty seconds.
+  void _onTap(double width) {
+    if (!_ui.isLocked && _isSeekingForward != null) {
+      final side = _sideAt(_lastTapX, width);
+      if (side == _isSeekingForward) {
+        _addSeekStep(forward: side!);
+        return;
+      }
+    }
+    if (_ui.config.gestures.tapTogglesControls) _ui.toggleControls();
+  }
+
+  /// Which side of the picture [x] falls on, or null for the middle band that toggles playback.
+  bool? _sideAt(double x, double width) {
+    final third = width / 3;
+    if (x < third) return false;
+    if (x > width - third) return true;
+    return null;
+  }
+
+  void _addSeekStep({required bool forward}) {
+    forward ? _ui.controller.skipForward() : _ui.controller.skipBackward();
+
+    _seekTimer?.cancel();
+    setState(() {
+      _seekSteps = _isSeekingForward == forward ? _seekSteps + 1 : 1;
+      _isSeekingForward = forward;
+    });
+
+    // Long enough to catch the next tap, short enough that the ripple is gone by the time anyone
+    // looks back at the picture.
+    _seekTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() {
+          _isSeekingForward = null;
+          _seekSteps = 0;
+        });
+      }
+    });
   }
 
   // endregion
@@ -341,10 +403,135 @@ class _Feedback extends StatelessWidget {
   }
 
   static IconData _iconFor(_FeedbackKind kind) => switch (kind) {
-        _FeedbackKind.seekForward => Icons.fast_forward,
-        _FeedbackKind.seekBackward => Icons.fast_rewind,
         _FeedbackKind.volume => Icons.volume_up,
         _FeedbackKind.brightness => Icons.brightness_6,
         _FeedbackKind.speed => Icons.speed,
       };
+}
+
+/// The half-screen wash that answers a double tap.
+///
+/// The shape matters: a plain rectangle reads as a broken layout, while an edge that bows toward
+/// the middle reads as a ripple spreading from where the finger landed. The count keeps climbing
+/// as taps land, because the useful number is how far the tap took you in total, not per tap.
+class _SeekRipple extends StatefulWidget {
+  const _SeekRipple({
+    required this.ui,
+    required this.isForward,
+    required this.seconds,
+    super.key,
+  });
+
+  final FPlayerUi ui;
+  final bool isForward;
+  final int seconds;
+
+  @override
+  State<_SeekRipple> createState() => _SeekRippleState();
+}
+
+class _SeekRippleState extends State<_SeekRipple> with SingleTickerProviderStateMixin {
+  late final AnimationController _chevrons = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _chevrons.dispose();
+    super.dispose();
+  }
+
+  /// A pulse that travels along the three glyphs, in the direction of travel.
+  double _opacityAt(double t, int index) {
+    final phase = (t - index * 0.15) % 1.0;
+    if (phase >= 0.35) return 0.3;
+    return 0.3 + 0.7 * math.sin(phase / 0.35 * math.pi);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.ui.theme;
+    final l10n = widget.ui.localizations;
+
+    return Align(
+      alignment: widget.isForward ? Alignment.centerRight : Alignment.centerLeft,
+      child: FractionallySizedBox(
+        widthFactor: 0.5,
+        heightFactor: 1,
+        child: ClipPath(
+          clipper: _RippleClipper(isForward: widget.isForward),
+          child: ColoredBox(
+            // Enough to read as a wash over a dark scene, not so much that it whites out a bright
+            // one — the picture is what someone is looking at.
+            color: theme.foreground.withValues(alpha: 0.11),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Transform.scale(
+                    scaleX: widget.isForward ? 1 : -1,
+                    child: AnimatedBuilder(
+                      animation: _chevrons,
+                      builder: (context, _) => Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < 3; i++)
+                            Opacity(
+                              opacity: _opacityAt(_chevrons.value, i),
+                              child: Icon(
+                                Icons.play_arrow,
+                                size: theme.iconSize * 1.1,
+                                color: theme.foreground,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: theme.spacing / 2),
+                  Text(
+                    '${widget.seconds} ${l10n.seconds}',
+                    style: theme.labelStyle.copyWith(color: theme.foreground),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RippleClipper extends CustomClipper<Path> {
+  const _RippleClipper({required this.isForward});
+
+  final bool isForward;
+
+  @override
+  Path getClip(Size size) {
+    final bulge = size.width * 0.42;
+    final path = Path();
+
+    if (isForward) {
+      path
+        ..moveTo(bulge, 0)
+        ..quadraticBezierTo(0, size.height / 2, bulge, size.height)
+        ..lineTo(size.width, size.height)
+        ..lineTo(size.width, 0);
+    } else {
+      final inner = size.width - bulge;
+      path
+        ..moveTo(inner, 0)
+        ..quadraticBezierTo(size.width, size.height / 2, inner, size.height)
+        ..lineTo(0, size.height)
+        ..lineTo(0, 0);
+    }
+
+    return path..close();
+  }
+
+  @override
+  bool shouldReclip(_RippleClipper oldClipper) => oldClipper.isForward != isForward;
 }

@@ -33,6 +33,10 @@ abstract interface class FPlayerUi {
 
   bool get isFullscreen;
 
+  /// Whether any panel — settings or tracks — is over the picture.
+  ///
+  /// The chrome reads this rather than which one: a panel is a panel as far as the auto-hide
+  /// countdown and the remote's back button are concerned.
   bool get isSettingsOpen;
 
   /// Shows the controls and restarts the auto-hide countdown. Call it from any custom control so
@@ -51,6 +55,15 @@ abstract interface class FPlayerUi {
 
   void openSettings();
 
+  /// Which panel is over the picture, if any.
+  FPlayerPanel? get panel;
+
+  /// Puts a panel over the picture, replacing whichever one was there.
+  void openPanel(FPlayerPanel panel);
+
+  /// Closes whichever panel is open. [closeSettings] is the same call.
+  void closePanel();
+
   void closeSettings();
 
   void beginScrub();
@@ -63,6 +76,21 @@ abstract interface class FPlayerUi {
 
   /// Runs the view's back action: leaves fullscreen if in it, otherwise pops the route.
   void back();
+}
+
+/// The panels the bundled chrome can put over the picture.
+enum FPlayerPanel {
+  /// Audio and subtitles, side by side. What a viewer actually reaches for.
+  tracks,
+
+  /// The quality ladder, with `Auto` at the top.
+  quality,
+
+  /// Playback speed.
+  speed,
+
+  /// Everything at once, for a remote. See `FUiConfig.showSettingsButton`.
+  settings,
 }
 
 /// Makes the surrounding [FPlayerUi] reachable from anywhere under an `FPlayerView`.

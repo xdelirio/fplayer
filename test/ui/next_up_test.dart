@@ -79,7 +79,11 @@ void main() {
   });
 
   testWidgets('track controls appear only with a queue', (tester) async {
-    await pumpPlayer(tester, controller: controller);
+    await pumpPlayer(
+      tester,
+      controller: controller,
+      config: const FUiConfig(showControlsOnStart: true),
+    );
     await controller.open(const FPlayerSource.network('https://example.com/solo.mp4'));
     engine.becomeReady();
     await tester.pump();

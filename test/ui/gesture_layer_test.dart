@@ -57,6 +57,48 @@ void main() {
     await settlePlayer(tester);
   });
 
+  testWidgets('taps pile onto the ripple while it is up', (tester) async {
+    await ready(tester);
+    await doubleTapAt(tester, const Offset(740, 225));
+
+    // Single taps, not double ones: once the ripple is up the side is already known, and nobody
+    // double-taps four times to skip forty seconds.
+    await tester.tapAt(const Offset(740, 225));
+    await tester.pump(kDoubleTapTimeout);
+
+    expect(controller.position, const Duration(minutes: 5, seconds: 20));
+    expect(find.text('20 ${const FPlayerLocalizations().seconds}'), findsOneWidget);
+    // The controls stay away: that tap was a seek, not a request for chrome.
+    expect(uiOf(tester).areControlsVisible, isFalse);
+
+    await settlePlayer(tester);
+  });
+
+  testWidgets('the count starts over on the other side', (tester) async {
+    await ready(tester);
+    await doubleTapAt(tester, const Offset(740, 225));
+    await doubleTapAt(tester, const Offset(60, 225));
+    // Past the cross-fade, so the ripple leaving the other side is gone.
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(controller.position, const Duration(minutes: 5));
+    expect(find.text('10 ${const FPlayerLocalizations().seconds}'), findsOneWidget);
+    await settlePlayer(tester);
+  });
+
+  testWidgets('a tap once the ripple has faded shows the controls again', (tester) async {
+    await ready(tester);
+    await doubleTapAt(tester, const Offset(740, 225));
+    await tester.pump(const Duration(seconds: 2));
+
+    await tester.tapAt(const Offset(740, 225));
+    await tester.pump(kDoubleTapTimeout);
+
+    expect(uiOf(tester).areControlsVisible, isTrue);
+    expect(controller.position, const Duration(minutes: 5, seconds: 10));
+    await settlePlayer(tester);
+  });
+
   testWidgets('double tap in the middle toggles playback', (tester) async {
     await ready(tester);
     await doubleTapAt(tester, const Offset(400, 225));

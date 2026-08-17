@@ -21,6 +21,7 @@ class FPlayerTheme {
     this.trackHeight = 3,
     this.thumbRadius = 7,
     this.spacing = 8,
+    this.menuWidth = 328,
     this.padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     this.borderRadius = const BorderRadius.all(Radius.circular(12)),
     this.titleStyle = const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
@@ -42,6 +43,7 @@ class FPlayerTheme {
           trackHeight: 5,
           thumbRadius: 10,
           spacing: 14,
+          menuWidth: 440,
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
           titleStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
           subtitleStyle: const TextStyle(fontSize: 16),
@@ -86,6 +88,10 @@ class FPlayerTheme {
   final double trackHeight;
   final double thumbRadius;
   final double spacing;
+
+  /// Width of the settings sheet, capped by the space actually available.
+  final double menuWidth;
+
   final EdgeInsets padding;
   final BorderRadius borderRadius;
 
@@ -111,6 +117,7 @@ class FPlayerTheme {
     double? trackHeight,
     double? thumbRadius,
     double? spacing,
+    double? menuWidth,
     EdgeInsets? padding,
     BorderRadius? borderRadius,
     TextStyle? titleStyle,
@@ -132,6 +139,7 @@ class FPlayerTheme {
         trackHeight: trackHeight ?? this.trackHeight,
         thumbRadius: thumbRadius ?? this.thumbRadius,
         spacing: spacing ?? this.spacing,
+        menuWidth: menuWidth ?? this.menuWidth,
         padding: padding ?? this.padding,
         borderRadius: borderRadius ?? this.borderRadius,
         titleStyle: titleStyle ?? this.titleStyle,

@@ -501,7 +501,7 @@
         <code>FPlayerView</code> sizes itself to the video's aspect ratio, so it drops into a
         <code>Column</code> without wrappers. If you would rather build your own interface, the
         layers are available on their own: <code>FVideoSurface</code>,
-        <code>FSubtitleView</code>, <code>FProgressBar</code>, <code>FSettingsPanel</code>,
+        <code>FSubtitleView</code>, <code>FProgressBar</code>, <code>FTrackDialog</code>,
         <code>FErrorView</code>.
       </p>
     </section>
@@ -635,6 +635,32 @@ tracker.dispose();</code></pre>
         Presets: <code>FUiConfig.bare()</code> leaves only the video (the gestures stay live, to
         feed your own overlay) and <code>FUiConfig.tv()</code> assembles the leanback layout.
       </p>
+      <h3>The chrome starts away</h3>
+      <p>
+        Nothing covers the picture until someone asks for it: a tap brings the controls up, and
+        meanwhile a hairline of progress along the bottom edge answers the one question worth
+        answering without one. <code>showControlsOnStart: true</code> restores the old behaviour
+        and <code>showIdleProgressBar: false</code> drops the hairline. <code>FUiConfig.tv()</code>
+        shows the controls on start, because a remote needs something focused to start from.
+      </p>
+      <h3>The controls live at the bottom</h3>
+      <p>
+        Four things are configurable — audio, subtitles, quality, speed — which is not enough to
+        earn a menu. Audio and subtitles share one dialog, side by side, because the decision is
+        one decision; quality and speed each get a control that already reads as its value.
+      </p>
+<pre><code><span class="c">// Every one of these is a bool on FUiConfig.</span>
+showAudioSubtitlesButton   <span class="c">// both track lists at once; hidden when there is nothing to pick</span>
+showQualityButton          <span class="c">// reads `Auto · 1080p`; only on adaptive media with more than one rung</span>
+showSpeedButton            <span class="c">// reads `1x`</span>
+showMuteButton
+showFitButton
+showFullscreenButton
+showSettingsButton         <span class="c">// the catch-all panel: off on touch, on for FUiConfig.tv()</span></code></pre>
+      <p>To open the same panels from your own controls:</p>
+<pre><code>ui.openPanel(FPlayerPanel.tracks);   <span class="c">// .quality · .speed · .settings</span>
+ui.closePanel();
+ui.panel;                            <span class="c">// what is open, if anything</span></code></pre>
     </section>
 
     <section id="gotchas">
@@ -695,7 +721,7 @@ tracker.dispose();</code></pre>
       <ol>
         <li>Play a public MP4 with no headers. If this fails, it is Gradle or network configuration, not the player.</li>
         <li>Play your real HLS or DASH with the authentication headers in place.</li>
-        <li>Open the settings panel and confirm your audio and subtitle tracks are listed.</li>
+        <li>Open the audio and subtitles dialog and confirm your tracks are listed.</li>
         <li>Rotate the device, then enter and leave fullscreen: it must not reload.</li>
         <li>Cut the wifi mid-playback and turn it back on.</li>
         <li>If you use PiP or the media session, test them <strong>on a physical device</strong>.</li>

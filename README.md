@@ -17,7 +17,7 @@ A Flutter video player built on **Media3/ExoPlayer**, meant to be shared across 
 - Resume at a position (`startAt`)
 - Observable state through a `ChangeNotifier` plus a stream of discrete events
 - An actionable error taxonomy (`unauthorized`, `notFound`, `unsupportedFormat`, …) with automatic retry and exponential backoff
-- **A complete UI** (`FPlayerView`) with controls, gestures, a settings panel, fullscreen and error states — replaceable piece by piece
+- **A complete UI** (`FPlayerView`) with bottom-bar controls, gestures, an audio-and-subtitles dialog, fullscreen and error states — replaceable piece by piece
 - **Remote control / Android TV** with accelerated scrubbing and focus navigation
 - **Storyboard**: thumbnails on the seek bar from a WebVTT index with sprite sheets
 - **Chapters** on the bar and a skip intro / credits button
@@ -95,7 +95,29 @@ Inside a builder, `FPlayerScope.of(context)` gives you the same view state the b
 
 Presets: `FUiConfig.bare()` leaves only the video (the gestures stay live, to feed your own overlay) and `FUiConfig.tv()` assembles the leanback layout.
 
-If you would rather build it from scratch, the layers are available on their own: `FVideoSurface`, `FSubtitleView`, `FProgressBar`, `FSettingsPanel`, `FErrorView`.
+If you would rather build it from scratch, the layers are available on their own: `FVideoSurface`, `FSubtitleView`, `FProgressBar`, `FTrackDialog`, `FSettingsPanel`, `FErrorView`.
+
+**The chrome starts away.** The picture is what someone opened the screen for, so nothing covers it until they ask: a tap brings the controls up, and meanwhile a hairline of progress along the bottom edge answers the one question worth answering without one. `showControlsOnStart: true` restores the old behaviour, `showIdleProgressBar: false` drops the hairline. `FUiConfig.tv()` shows the controls on start, because a remote needs something focused to start from.
+
+**The controls live at the bottom.** Everything configurable is one tap away, no menu to walk:
+
+| | |
+|---|---|
+| `showAudioSubtitlesButton` | opens both track lists side by side; hidden when there is nothing to pick |
+| `showQualityButton` | reads `Auto · 1080p`, opens the ladder; only on adaptive media with more than one rung |
+| `showSpeedButton` | reads `1x`, opens the speeds as pills |
+| `showMuteButton`, `showFitButton`, `showFullscreenButton` | |
+| `showSettingsButton` | the catch-all panel. Off on touch, on for `FUiConfig.tv()` |
+
+Every one of those is a `bool` on `FUiConfig`, so `FUiConfig(showMuteButton: false)` is all it takes to drop a control.
+
+To open the same panels from your own controls:
+
+```dart
+ui.openPanel(FPlayerPanel.tracks);   // .quality · .speed · .settings
+ui.closePanel();
+ui.panel;                            // what is open, if anything
+```
 
 ### Fullscreen
 
@@ -141,6 +163,8 @@ FUiConfig(
 ```
 
 `FGestureConfig.none()` turns them all off except the tap that reveals the controls.
+
+A double tap on a side washes that half of the picture and counts what it skipped — `10 seconds`, `20 seconds` — and while that is on screen a **single** tap on the same side adds another step, so crossing a minute is one double tap and four taps rather than five double taps.
 
 ### Sources
 
@@ -196,6 +220,8 @@ final label = tracks.isVideoAuto
     ? 'Auto (${tracks.activeVideo?.qualityLabel})'
     : tracks.selectedVideo!.qualityLabel;
 ```
+
+The quality menu shows one row per rung: manifests routinely carry several renditions of the same size, and a list with `1080p` three times asks a question nobody can answer. Each size keeps its best rendition; `tracks.video` still holds them all.
 
 `qualityLabel` normalises to the rungs people recognise. Cinematic content is wider than 16:9, so a 1680×750 rendition is labelled `1080p` and not `750p`; `width` and `height` are still there if you prefer the raw numbers.
 

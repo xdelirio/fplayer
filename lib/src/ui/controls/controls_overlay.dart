@@ -7,6 +7,7 @@ import '../time_format.dart';
 import '../video_fit.dart';
 import 'player_button.dart';
 import 'progress_bar.dart';
+import 'settings_panel.dart' show qualitySummary;
 
 /// The default chrome: a title row on top, transport controls in the middle, a seek bar and
 /// buttons at the bottom.
@@ -254,8 +255,18 @@ class _BottomBar extends StatelessWidget {
   final List<Widget> actions;
   final Widget Function(BuildContext context, Duration position)? previewBuilder;
 
+  /// Whether the picker has anything to offer: a second audio track, or any subtitles at all.
+  static bool _hasTracksToPick(FPlayerUi ui) {
+    final tracks = ui.controller.tracks;
+    return tracks.audio.length > 1 || tracks.hasSubtitles;
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) => _build(context, constraints.maxWidth),
+      );
+
+  Widget _build(BuildContext context, double width) {
     final theme = ui.theme;
     final config = ui.config;
     final l10n = ui.localizations;
@@ -288,6 +299,34 @@ class _BottomBar extends StatelessWidget {
             ],
             Row(
               children: [
+                if (config.showAudioSubtitlesButton && _hasTracksToPick(ui))
+                  FPlayerButton(
+                    icon: controller.tracks.selectedText != null
+                        ? Icons.closed_caption
+                        : Icons.closed_caption_off_outlined,
+                    theme: theme,
+                    isActive: controller.tracks.selectedText != null,
+                    semanticLabel: l10n.audioAndSubtitles,
+                    onPressed: () => ui.openPanel(FPlayerPanel.tracks),
+                  ),
+                if (config.showQualityButton && controller.tracks.hasMultipleQualities)
+                  FPlayerTextButton(
+                    // The long form only when there is room for it: `Auto · 1080p` says more, but
+                    // not at the cost of pushing the fullscreen button off a phone.
+                    label: width < 420
+                        ? controller.tracks.activeVideo?.qualityLabel ?? l10n.auto
+                        : qualitySummary(ui),
+                    theme: theme,
+                    semanticLabel: l10n.quality,
+                    onPressed: () => ui.openPanel(FPlayerPanel.quality),
+                  ),
+                if (config.showSpeedButton)
+                  FPlayerTextButton(
+                    label: formatPlaybackSpeed(value.speed),
+                    theme: theme,
+                    semanticLabel: l10n.speed,
+                    onPressed: () => ui.openPanel(FPlayerPanel.speed),
+                  ),
                 if (config.showMuteButton)
                   FPlayerButton(
                     icon: value.isMuted ? Icons.volume_off : Icons.volume_up,
@@ -295,13 +334,6 @@ class _BottomBar extends StatelessWidget {
                     isActive: value.isMuted,
                     semanticLabel: value.isMuted ? l10n.unmute : l10n.mute,
                     onPressed: controller.toggleMute,
-                  ),
-                if (config.showSpeedButton)
-                  FPlayerTextButton(
-                    label: formatPlaybackSpeed(value.speed),
-                    theme: theme,
-                    semanticLabel: l10n.speed,
-                    onPressed: ui.openSettings,
                   ),
                 if (config.showFitButton)
                   FPlayerButton(

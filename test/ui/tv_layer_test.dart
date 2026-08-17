@@ -10,6 +10,7 @@ void main() {
   late FPlayerController controller;
 
   const tvConfig = FUiConfig(
+    showControlsOnStart: true,
     tv: FTvConfig(
       mode: FTvMode.enabled,
       seekCommitDelay: Duration(milliseconds: 300),
@@ -121,6 +122,7 @@ void main() {
     await ready(
       tester,
       config: const FUiConfig(
+        showControlsOnStart: true,
         tv: FTvConfig(
           mode: FTvMode.enabled,
           seekAcceleration: false,

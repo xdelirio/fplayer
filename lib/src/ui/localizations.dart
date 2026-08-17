@@ -17,11 +17,13 @@ class FPlayerLocalizations {
     this.replay = 'Replay',
     this.forward = 'Forward',
     this.rewind = 'Rewind',
+    this.seconds = 'seconds',
     this.mute = 'Mute',
     this.unmute = 'Unmute',
     this.settings = 'Settings',
     this.audio = 'Audio',
     this.subtitles = 'Subtitles',
+    this.audioAndSubtitles = 'Audio & subtitles',
     this.quality = 'Quality',
     this.speed = 'Speed',
     this.off = 'Off',
@@ -62,11 +64,13 @@ class FPlayerLocalizations {
           replay: 'Volver a ver',
           forward: 'Avanzar',
           rewind: 'Retroceder',
+          seconds: 'segundos',
           mute: 'Silenciar',
           unmute: 'Activar sonido',
           settings: 'Ajustes',
           audio: 'Audio',
           subtitles: 'Subtítulos',
+          audioAndSubtitles: 'Audio y subtítulos',
           quality: 'Calidad',
           speed: 'Velocidad',
           off: 'Desactivados',
@@ -104,11 +108,17 @@ class FPlayerLocalizations {
   final String replay;
   final String forward;
   final String rewind;
+
+  /// Unit shown under the double-tap seek ripple, after the number: "10 seconds".
+  final String seconds;
   final String mute;
   final String unmute;
   final String settings;
   final String audio;
   final String subtitles;
+
+  /// Title of the dialog that holds both, and the label of the control that opens it.
+  final String audioAndSubtitles;
   final String quality;
   final String speed;
 
@@ -158,11 +168,13 @@ class FPlayerLocalizations {
     String? replay,
     String? forward,
     String? rewind,
+    String? seconds,
     String? mute,
     String? unmute,
     String? settings,
     String? audio,
     String? subtitles,
+    String? audioAndSubtitles,
     String? quality,
     String? speed,
     String? off,
@@ -200,11 +212,13 @@ class FPlayerLocalizations {
         replay: replay ?? this.replay,
         forward: forward ?? this.forward,
         rewind: rewind ?? this.rewind,
+        seconds: seconds ?? this.seconds,
         mute: mute ?? this.mute,
         unmute: unmute ?? this.unmute,
         settings: settings ?? this.settings,
         audio: audio ?? this.audio,
         subtitles: subtitles ?? this.subtitles,
+        audioAndSubtitles: audioAndSubtitles ?? this.audioAndSubtitles,
         quality: quality ?? this.quality,
         speed: speed ?? this.speed,
         off: off ?? this.off,

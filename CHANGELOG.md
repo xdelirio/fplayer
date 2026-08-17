@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.0
+
+A chrome that gets out of the way, and controls where you can see them.
+
+### Added
+
+- **Audio and subtitles in one dialog**, side by side, opened by a single control in the bottom bar. Two columns where there is room, stacked where there is not. The decision is one decision — Japanese audio with English subtitles — so it takes one panel and no menu to walk.
+- **A quality control that reads as a value**: `Auto · 1080p` in the bottom bar, the ladder one tap away, the long form dropped for the short one when the player is narrow. Speed works the same way.
+- **One row per rung in the quality menu.** Manifests routinely carry several renditions of the same size — a second codec, a second bitrate ladder — and a list with `1080p` three times asks a question nobody can answer. Each size keeps its best rendition; the pinned one still lights up if it was one of the duplicates.
+- **`showIdleProgressBar`**: a hairline of progress along the bottom edge while the controls are away, so the one thing worth knowing without asking is on screen.
+- **`FPlayerPanel`** with `openPanel` / `closePanel` / `panel` on `FPlayerUi`, for opening the same panels from your own controls.
+- `FPlayerTheme.menuWidth`, and the panel chrome (`FPanelSheet`, `FPanelOptionRow`, `FPanelHeader`, …) as reusable pieces.
+- `FPlayerLocalizations.audioAndSubtitles` and `.seconds`.
+
+### Changed
+
+- **The controls no longer appear on start.** `showControlsOnStart` now defaults to false: the picture is what someone opened the screen for, and the chrome is one tap away. `FUiConfig.tv()` keeps it on — a remote needs something focused to start from.
+- **The double-tap seek looks like the players people already use**: a half-screen ripple with a curved inner edge, three chevrons travelling in the direction of travel, and a count that keeps climbing while taps land — and once it is up, single taps on the same side add another step.
+- **The settings panel was rebuilt**: frosted surface, rounded rows, a real hierarchy, one level of depth, speeds as pills, and a scrim that dismisses on a tap outside. It is off by default on touch, where the bottom bar covers the same ground in one tap; `FUiConfig.tv()` turns it back on, because a row of small targets is worse to walk with a D-pad than one list.
+- `showSettingsButton` now defaults to false. `isSettingsOpen` means "any panel is open".
+
+### Fixed
+
+- **The chrome no longer inherits Flutter's error text style** — yellow, underlined, monospaced — when it sits in a route with no Material ancestor. The fullscreen route is exactly such a route, so every label in it was painted that way. The view now supplies its own text baseline.
+
 ## 0.5.0
 
 Wakelock, brightness, real DRM, and the `fvp` engine as a sibling package. Closes phase 11.

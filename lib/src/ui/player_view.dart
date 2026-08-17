@@ -19,6 +19,7 @@ import 'controls/next_up_card.dart';
 import 'controls/player_button.dart';
 import 'controls/settings_panel.dart';
 import 'controls/skip_marker.dart';
+import 'controls/track_dialog.dart';
 import 'fullscreen.dart';
 import 'gestures/gesture_layer.dart';
 import 'localizations.dart';
@@ -134,7 +135,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   Timer? _hideTimer;
   bool _areControlsVisible = false;
   bool _isLocked = false;
-  bool _isSettingsOpen = false;
+  FPlayerPanel? _panel;
   bool _isScrubbing = false;
   Duration _scrubPosition = Duration.zero;
   late FVideoFit _fit = widget.config.fit;
@@ -218,7 +219,10 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   bool get isFullscreen => widget.isFullscreen;
 
   @override
-  bool get isSettingsOpen => _isSettingsOpen;
+  bool get isSettingsOpen => _panel != null;
+
+  @override
+  FPlayerPanel? get panel => _panel;
 
   @override
   void showControls() {
@@ -247,7 +251,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   void setLocked({required bool locked}) {
     setState(() {
       _isLocked = locked;
-      _isSettingsOpen = false;
+      _panel = null;
     });
     showControls();
   }
@@ -262,17 +266,23 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   void cycleFit() => setFit(_fit.next);
 
   @override
-  void openSettings() {
+  void openSettings() => openPanel(FPlayerPanel.settings);
+
+  @override
+  void openPanel(FPlayerPanel panel) {
     _hideTimer?.cancel();
     setState(() {
-      _isSettingsOpen = true;
+      _panel = panel;
       _areControlsVisible = true;
     });
   }
 
   @override
-  void closeSettings() {
-    setState(() => _isSettingsOpen = false);
+  void closeSettings() => closePanel();
+
+  @override
+  void closePanel() {
+    setState(() => _panel = null);
     showControls();
   }
 
@@ -390,7 +400,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   }
 
   bool get _canAutoHide {
-    if (_isSettingsOpen || _isScrubbing) return false;
+    if (_panel != null || _isScrubbing) return false;
     final value = widget.controller.value;
     if (value.hasError) return false;
     if (widget.config.keepControlsWhilePaused && !value.isPlaying) return false;
@@ -423,12 +433,26 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
 
   @override
   Widget build(BuildContext context) {
+    final theme = widget.config.theme;
+
     final content = FPlayerScope(
       ui: this,
-      child: FTvLayer(
-        ui: this,
-        config: widget.config.tv,
-        child: _buildStack(context),
+      // Its own text baseline, because the chrome cannot count on having one. Every style here is
+      // built with `copyWith`, so it inherits whatever ambient style there is — and a route with
+      // no Material ancestor supplies Flutter's error style, which paints the whole player's text
+      // yellow and underlined. The fullscreen route is exactly such a route.
+      child: DefaultTextStyle(
+        style: TextStyle(
+          color: theme.foreground,
+          fontSize: theme.labelStyle.fontSize,
+          fontWeight: FontWeight.w400,
+          decoration: TextDecoration.none,
+        ),
+        child: FTvLayer(
+          ui: this,
+          config: widget.config.tv,
+          child: _buildStack(context),
+        ),
       ),
     );
 
@@ -492,6 +516,14 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
                 ),
               ),
             ),
+          if (widget.config.showControls && widget.config.showIdleProgressBar)
+            IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _areControlsVisible || value.hasError ? 0 : 1,
+                duration: const Duration(milliseconds: 180),
+                child: _IdleProgress(key: const Key('fplayer.idle-progress'), ui: this),
+              ),
+            ),
           if (!_isLocked) FSkipMarker(ui: this),
           if (!_isLocked) FNextUpCard(ui: this),
           if (_isLocked) _LockedAffordance(ui: this),
@@ -503,18 +535,73 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
           if (value.hasError)
             widget.errorBuilder?.call(context, this, value.error!) ??
                 FErrorView(ui: this, error: value.error!),
-          if (_isSettingsOpen) FSettingsPanel(ui: this),
+          if (_panel != null) _panelFor(_panel!),
           if (widget.overlayBuilder != null) widget.overlayBuilder!(context, this),
         ],
       ),
     );
   }
 
+  Widget _panelFor(FPlayerPanel panel) => switch (panel) {
+        FPlayerPanel.tracks => FTrackDialog(ui: this),
+        FPlayerPanel.quality => FOptionsSheet(
+            ui: this,
+            title: widget.config.localizations.quality,
+            children: qualityRows(this, onSelected: closePanel),
+          ),
+        FPlayerPanel.speed => FSpeedSheet(ui: this),
+        FPlayerPanel.settings => FSettingsPanel(ui: this),
+      };
+
   /// Room the bottom band takes, so subtitles slide above it instead of hiding behind it.
   double get _bottomBarHeight {
     final theme = widget.config.theme;
     final seekBar = widget.config.showSeekBar ? theme.thumbRadius * 2 + 16 : 0;
     return theme.padding.vertical + seekBar + theme.iconSize + theme.spacing * 2;
+  }
+}
+
+/// A hairline of progress along the bottom edge, shown while the controls are away.
+///
+/// The chrome starts hidden, so this is what answers "how far in am I" without asking for a tap.
+/// Deliberately not interactive: it is thinner than any usable target, and the seek bar it hints
+/// at is one tap away.
+class _IdleProgress extends StatelessWidget {
+  const _IdleProgress({required this.ui, super.key});
+
+  final FPlayerUi ui;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ui.theme;
+    final value = ui.controller.value;
+    if (value.duration == null || value.isLive) return const SizedBox.shrink();
+
+    final played = value.progress.clamp(0.0, 1.0);
+    final buffered = value.bufferedProgress.clamp(played, 1.0);
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: SizedBox(
+        height: 2.5,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(color: theme.trackColor.withValues(alpha: 0.25)),
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: buffered,
+              child: ColoredBox(color: theme.bufferedColor.withValues(alpha: 0.35)),
+            ),
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: played,
+              child: ColoredBox(color: theme.accent),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

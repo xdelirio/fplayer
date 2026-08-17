@@ -6,12 +6,13 @@ import '../player_scope.dart';
 import '../theme.dart';
 import '../time_format.dart';
 import 'focus_highlight.dart';
+import 'panel_chrome.dart';
 
-/// Track and speed picker, shown as a panel over the video.
+/// Everything the player can be told to do, in one sheet.
 ///
-/// A side panel rather than a modal bottom sheet: it keeps the picture visible while you compare
-/// options, it needs no Navigator or Material ancestor, and it is the layout a remote can already
-/// walk — the same widget serves the TV build.
+/// On touch the bottom bar carries dedicated buttons and this panel is off; it earns its place on
+/// a remote, where a row of small targets is worse to walk than one list. `FUiConfig.tv()` turns
+/// it back on for that reason.
 class FSettingsPanel extends StatefulWidget {
   const FSettingsPanel({required this.ui, super.key});
 
@@ -26,48 +27,76 @@ enum _Section { root, audio, subtitles, quality, speed }
 class _FSettingsPanelState extends State<FSettingsPanel> {
   _Section _section = _Section.root;
 
+  /// Which way the next section slides in from, so going deeper and coming back feel different.
+  bool _isDescending = true;
+
   FPlayerUi get _ui => widget.ui;
+
+  void _open(_Section section) => setState(() {
+        _isDescending = true;
+        _section = section;
+      });
+
+  void _back() => setState(() {
+        _isDescending = false;
+        _section = _Section.root;
+      });
 
   @override
   Widget build(BuildContext context) {
     final theme = _ui.theme;
 
-    return Align(
-      alignment: Alignment.centerRight,
-      child: SafeArea(
-        child: Container(
-          width: 300,
-          margin: EdgeInsets.all(theme.spacing),
-          decoration: BoxDecoration(
-            color: theme.surface,
-            borderRadius: theme.borderRadius,
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _Header(
-                ui: _ui,
-                title: _titleFor(_section),
-                onBack: _section == _Section.root
-                    ? null
-                    : () => setState(() => _section = _Section.root),
-                onClose: _ui.closeSettings,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FPanelScrim(theme: theme, onTap: _ui.closeSettings),
+        Align(
+          alignment: Alignment.centerRight,
+          child: SafeArea(
+            child: Padding(
+              padding: EdgeInsets.all(theme.spacing),
+              child: FPanelEnterTransition(
+                slideFrom: const Offset(28, 0),
+                child: FPanelSheet(theme: theme, child: _content(theme)),
               ),
-              Flexible(
-                child: SingleChildScrollView(
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _content(FPlayerTheme theme) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FPanelHeader(
+            theme: theme,
+            title: _titleFor(_section),
+            onBack: _section == _Section.root ? null : _back,
+            onClose: _ui.closeSettings,
+          ),
+          FPanelDivider(theme: theme),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(vertical: theme.spacing * 0.75),
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: _SectionTransition(
+                  // A new key restarts the animation, so each section slides in on arrival.
+                  key: ValueKey(_section),
+                  from: _isDescending ? 24 : -24,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: _rowsFor(_section),
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
+        ],
+      );
 
   String _titleFor(_Section section) {
     final l10n = _ui.localizations;
@@ -82,9 +111,9 @@ class _FSettingsPanelState extends State<FSettingsPanel> {
 
   List<Widget> _rowsFor(_Section section) => switch (section) {
         _Section.root => _rootRows(),
-        _Section.audio => _audioRows(),
-        _Section.subtitles => _subtitleRows(),
-        _Section.quality => _qualityRows(),
+        _Section.audio => audioRows(_ui),
+        _Section.subtitles => subtitleRows(_ui),
+        _Section.quality => qualityRows(_ui),
         _Section.speed => _speedRows(),
       };
 
@@ -94,284 +123,365 @@ class _FSettingsPanelState extends State<FSettingsPanel> {
 
     return [
       if (tracks.audio.length > 1)
-        _Row(
+        _NavRow(
           ui: _ui,
           icon: Icons.multitrack_audio,
           label: l10n.audio,
           value: tracks.selectedAudio?.displayName ?? l10n.auto,
-          hasChildren: true,
-          onTap: () => setState(() => _section = _Section.audio),
+          onTap: () => _open(_Section.audio),
         ),
       if (tracks.hasSubtitles)
-        _Row(
+        _NavRow(
           ui: _ui,
-          icon: Icons.subtitles,
+          icon: Icons.subtitles_outlined,
           label: l10n.subtitles,
           value: tracks.selectedText?.displayName ?? l10n.off,
-          hasChildren: true,
-          onTap: () => setState(() => _section = _Section.subtitles),
+          onTap: () => _open(_Section.subtitles),
         ),
       if (tracks.hasMultipleQualities)
-        _Row(
+        _NavRow(
           ui: _ui,
-          icon: Icons.high_quality,
+          icon: Icons.high_quality_outlined,
           label: l10n.quality,
-          value: tracks.isVideoAuto
-              ? '${l10n.auto}${tracks.activeVideo?.qualityLabel != null ? ' · ${tracks.activeVideo!.qualityLabel}' : ''}'
-              : tracks.selectedVideo?.displayName ?? l10n.auto,
-          hasChildren: true,
-          onTap: () => setState(() => _section = _Section.quality),
+          value: qualitySummary(_ui),
+          onTap: () => _open(_Section.quality),
         ),
-      _Row(
+      _NavRow(
         ui: _ui,
-        icon: Icons.speed,
+        icon: Icons.speed_outlined,
         label: l10n.speed,
         value: _ui.controller.speed == 1.0
             ? l10n.normal
             : formatPlaybackSpeed(_ui.controller.speed),
-        hasChildren: true,
-        onTap: () => setState(() => _section = _Section.speed),
+        onTap: () => _open(_Section.speed),
       ),
     ];
   }
 
-  List<Widget> _audioRows() {
-    final tracks = _ui.controller.tracks;
+  List<Widget> _speedRows() {
+    final theme = _ui.theme;
+
+    // Chips rather than a list: the values are short, the set is small, and seeing them side by
+    // side is the whole point — 1.5× means little without 1.25× and 2× next to it.
     return [
-      for (final track in tracks.audio)
-        _Row(
-          ui: _ui,
-          label: _audioLabel(track),
-          isSelected: track.isActive,
-          isEnabled: track.isSupported,
-          onTap: () {
-            _ui.controller.selectAudioTrack(track);
-            _ui.closeSettings();
-          },
+      Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: theme.spacing * 1.5,
+          vertical: theme.spacing,
         ),
-    ];
-  }
-
-  String _audioLabel(FAudioTrack track) => [
-        track.displayName,
-        if (track.channelLabel != null) track.channelLabel!,
-        if (track.isDescriptive) 'AD',
-      ].join(' · ');
-
-  List<Widget> _subtitleRows() {
-    final tracks = _ui.controller.tracks;
-    return [
-      _Row(
-        ui: _ui,
-        label: _ui.localizations.off,
-        isSelected: tracks.selectedText == null,
-        onTap: () {
-          _ui.controller.disableSubtitles();
-          _ui.closeSettings();
-        },
+        child: Wrap(
+          spacing: theme.spacing,
+          runSpacing: theme.spacing,
+          children: [
+            for (final speed in _ui.config.speeds)
+              FSpeedChip(
+                ui: _ui,
+                label: speed == 1.0
+                    ? _ui.localizations.normal
+                    : formatPlaybackSpeed(speed),
+                isSelected: (_ui.controller.speed - speed).abs() < 0.01,
+                onTap: () {
+                  _ui.controller.setSpeed(speed);
+                  _ui.closeSettings();
+                },
+              ),
+          ],
+        ),
       ),
-      for (final track in tracks.text)
-        _Row(
-          ui: _ui,
-          label: [
-            track.displayName,
-            if (track.isForced) 'forced',
-            if (track.isClosedCaption) 'CC',
-          ].join(' · '),
-          isSelected: tracks.selectedText?.id == track.id,
-          isEnabled: track.isSupported,
-          onTap: () {
-            _ui.controller.selectTextTrack(track);
-            _ui.closeSettings();
-          },
-        ),
     ];
   }
-
-  List<Widget> _qualityRows() {
-    final tracks = _ui.controller.tracks;
-    final l10n = _ui.localizations;
-
-    return [
-      _Row(
-        ui: _ui,
-        label: l10n.auto,
-        value: tracks.isVideoAuto ? tracks.activeVideo?.qualityLabel : null,
-        isSelected: tracks.isVideoAuto,
-        onTap: () {
-          _ui.controller.enableAutoQuality();
-          _ui.closeSettings();
-        },
-      ),
-      // Highest first: a viewer opening this menu is usually reaching for more quality, not less.
-      for (final track in tracks.video.toList().reversed)
-        _Row(
-          ui: _ui,
-          label: track.qualityLabel ?? track.displayName,
-          value: track.bitrate == null ? null : '${(track.bitrate! / 1000).round()} kbps',
-          isSelected: tracks.selectedVideo?.id == track.id,
-          isEnabled: track.isSupported,
-          onTap: () {
-            _ui.controller.selectVideoTrack(track);
-            _ui.closeSettings();
-          },
-        ),
-    ];
-  }
-
-  List<Widget> _speedRows() => [
-        for (final speed in _ui.config.speeds)
-          _Row(
-            ui: _ui,
-            label: speed == 1.0 ? _ui.localizations.normal : formatPlaybackSpeed(speed),
-            isSelected: (_ui.controller.speed - speed).abs() < 0.01,
-            onTap: () {
-              _ui.controller.setSpeed(speed);
-              _ui.closeSettings();
-            },
-          ),
-      ];
 }
 
-class _Header extends StatelessWidget {
-  const _Header({
+/// The audio choices, as rows. Shared with the track dialog so the two cannot disagree.
+List<Widget> audioRows(FPlayerUi ui, {VoidCallback? onSelected}) {
+  final tracks = ui.controller.tracks;
+  return [
+    for (final track in tracks.audio)
+      FPanelOptionRow(
+        ui: ui,
+        label: track.displayName,
+        detail: [
+          if (track.channelLabel != null) track.channelLabel!,
+          if (track.isDescriptive) 'AD',
+        ].join(' · '),
+        isSelected: track.isActive,
+        isEnabled: track.isSupported,
+        onTap: () {
+          ui.controller.selectAudioTrack(track);
+          (onSelected ?? ui.closeSettings)();
+        },
+      ),
+  ];
+}
+
+List<Widget> subtitleRows(FPlayerUi ui, {VoidCallback? onSelected}) {
+  final tracks = ui.controller.tracks;
+  return [
+    FPanelOptionRow(
+      ui: ui,
+      label: ui.localizations.off,
+      isSelected: tracks.selectedText == null,
+      onTap: () {
+        ui.controller.disableSubtitles();
+        (onSelected ?? ui.closeSettings)();
+      },
+    ),
+    for (final track in tracks.text)
+      FPanelOptionRow(
+        ui: ui,
+        label: track.displayName,
+        badge: track.isClosedCaption ? 'CC' : null,
+        detail: track.isForced ? 'forced' : '',
+        isSelected: tracks.selectedText?.id == track.id,
+        isEnabled: track.isSupported,
+        onTap: () {
+          ui.controller.selectTextTrack(track);
+          (onSelected ?? ui.closeSettings)();
+        },
+      ),
+  ];
+}
+
+List<Widget> qualityRows(FPlayerUi ui, {VoidCallback? onSelected}) {
+  final tracks = ui.controller.tracks;
+  final selected = tracks.selectedVideo;
+
+  return [
+    FPanelOptionRow(
+      ui: ui,
+      label: ui.localizations.auto,
+      detail: tracks.isVideoAuto ? tracks.activeVideo?.qualityLabel ?? '' : '',
+      isSelected: tracks.isVideoAuto,
+      onTap: () {
+        ui.controller.enableAutoQuality();
+        (onSelected ?? ui.closeSettings)();
+      },
+    ),
+    for (final track in distinctQualityRungs(tracks.video))
+      FPanelOptionRow(
+        ui: ui,
+        label: track.qualityLabel ?? track.displayName,
+        badge: qualityBadge(track),
+        detail: track.bitrate == null ? '' : '${(track.bitrate! / 1000).round()} kbps',
+        // A rung stands for every rendition of that size, so the pinned one lights up even when
+        // it is one of the duplicates that was collapsed away.
+        isSelected: selected != null &&
+            (selected.id == track.id ||
+                (selected.qualityLabel != null &&
+                    selected.qualityLabel == track.qualityLabel)),
+        isEnabled: track.isSupported,
+        onTap: () {
+          ui.controller.selectVideoTrack(track);
+          (onSelected ?? ui.closeSettings)();
+        },
+      ),
+  ];
+}
+
+/// One row per rung, highest first.
+///
+/// Manifests routinely carry several renditions of the same size — a second codec, a second
+/// bitrate ladder — and a menu that lists `1080p` three times asks the viewer a question they
+/// cannot answer. Each size keeps its best rendition, which is the one anyone picking that size
+/// meant. Renditions with no readable size are left alone rather than merged.
+List<FVideoTrack> distinctQualityRungs(List<FVideoTrack> video) {
+  final best = <String, FVideoTrack>{};
+
+  for (final track in video) {
+    final key = track.qualityLabel ?? track.id;
+    final current = best[key];
+    if (current == null || (track.bitrate ?? 0) > (current.bitrate ?? 0)) {
+      best[key] = track;
+    }
+  }
+
+  // Highest first: a viewer opening this menu is usually reaching for more quality, not less.
+  return best.values.toList()
+    ..sort((a, b) {
+      final size = (b.height ?? 0).compareTo(a.height ?? 0);
+      return size != 0 ? size : (b.bitrate ?? 0).compareTo(a.bitrate ?? 0);
+    });
+}
+
+/// The shorthand people read off a quality menu, when the rung earns one.
+String? qualityBadge(FVideoTrack track) {
+  final height = track.height;
+  if (height == null) return null;
+  if (height >= 2000) return '4K';
+  if (height >= 700) return 'HD';
+  return null;
+}
+
+/// What the quality control says without being opened: `Auto · 1080p`, or the pinned rung.
+String qualitySummary(FPlayerUi ui) {
+  final tracks = ui.controller.tracks;
+  final l10n = ui.localizations;
+
+  if (!tracks.isVideoAuto) {
+    return tracks.selectedVideo?.qualityLabel ??
+        tracks.selectedVideo?.displayName ??
+        l10n.auto;
+  }
+  final active = tracks.activeVideo?.qualityLabel;
+  return active == null ? l10n.auto : '${l10n.auto} · $active';
+}
+
+/// A playback speed, as a pill.
+class FSpeedChip extends StatefulWidget {
+  const FSpeedChip({
     required this.ui,
-    required this.title,
-    required this.onBack,
-    required this.onClose,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+    super.key,
   });
 
   final FPlayerUi ui;
-  final String title;
-  final VoidCallback? onBack;
-  final VoidCallback onClose;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = ui.theme;
+  State<FSpeedChip> createState() => _FSpeedChipState();
+}
 
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: theme.spacing, vertical: theme.spacing / 2),
-      child: Row(
-        children: [
-          if (onBack != null)
-            _IconTap(theme: theme, icon: Icons.arrow_back, onTap: onBack!)
-          else
-            SizedBox(width: theme.spacing),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: theme.spacing / 2),
-              child: Text(
-                title,
-                style: theme.titleStyle.copyWith(color: theme.foreground),
-              ),
+class _FSpeedChipState extends State<FSpeedChip> with FFocusHighlight {
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.ui.theme;
+
+    return Focus(
+      onFocusChange: onFocusChanged,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: EdgeInsets.symmetric(
+            horizontal: theme.spacing * 1.75,
+            vertical: theme.spacing * 0.9,
+          ),
+          decoration: BoxDecoration(
+            color: widget.isSelected
+                ? theme.accent
+                : theme.foreground.withValues(alpha: showsFocusRing ? 0.22 : 0.10),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: showsFocusRing && !widget.isSelected
+                  ? theme.accent
+                  : const Color(0x00000000),
+              width: 1.5,
             ),
           ),
-          _IconTap(theme: theme, icon: Icons.close, onTap: onClose),
-        ],
+          child: Text(
+            widget.label,
+            style: theme.labelStyle.copyWith(
+              color: theme.foreground,
+              fontWeight: widget.isSelected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-class _IconTap extends StatelessWidget {
-  const _IconTap({required this.theme, required this.icon, required this.onTap});
-
-  final FPlayerTheme theme;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Padding(
-          padding: EdgeInsets.all(theme.spacing / 2),
-          child: Icon(icon, size: theme.iconSize, color: theme.foreground),
-        ),
-      );
-}
-
-class _Row extends StatefulWidget {
-  const _Row({
+/// A root entry: what it changes, what it is set to now, and a way in.
+class _NavRow extends StatefulWidget {
+  const _NavRow({
     required this.ui,
+    required this.icon,
     required this.label,
+    required this.value,
     required this.onTap,
-    this.icon,
-    this.value,
-    this.isSelected = false,
-    this.hasChildren = false,
-    this.isEnabled = true,
   });
 
   final FPlayerUi ui;
-  final IconData? icon;
+  final IconData icon;
   final String label;
-  final String? value;
-  final bool isSelected;
-  final bool hasChildren;
-  final bool isEnabled;
+  final String value;
   final VoidCallback onTap;
 
   @override
-  State<_Row> createState() => _RowState();
+  State<_NavRow> createState() => _NavRowState();
 }
 
-class _RowState extends State<_Row> with FFocusHighlight {
-
+class _NavRowState extends State<_NavRow> with FFocusHighlight {
   @override
   Widget build(BuildContext context) {
     final theme = widget.ui.theme;
-    final color = widget.isEnabled ? theme.foreground : theme.disabledForeground;
+    final tile = theme.iconSize * 1.9;
 
     return Focus(
-      canRequestFocus: widget.isEnabled,
       onFocusChange: onFocusChanged,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: widget.isEnabled ? widget.onTap : null,
-        child: Container(
-          color: showsFocusRing
-              ? theme.accent.withValues(alpha: 0.22)
-              : const Color(0x00000000),
-          padding: EdgeInsets.symmetric(
-            horizontal: theme.spacing * 1.5,
-            vertical: theme.spacing * 1.25,
-          ),
+        onTap: widget.onTap,
+        child: FPanelRowSurface(
+          theme: theme,
+          isHighlighted: showsFocusRing,
           child: Row(
             children: [
-              if (widget.icon != null) ...[
-                Icon(widget.icon, size: theme.iconSize, color: color),
-                SizedBox(width: theme.spacing),
-              ] else if (widget.isSelected) ...[
-                Icon(Icons.check, size: theme.iconSize, color: theme.accent),
-                SizedBox(width: theme.spacing),
-              ] else
-                SizedBox(width: theme.iconSize + theme.spacing),
+              Container(
+                width: tile,
+                height: tile,
+                decoration: BoxDecoration(
+                  color: theme.foreground.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(theme.spacing * 1.25),
+                ),
+                child: Icon(widget.icon, size: theme.iconSize * 0.9, color: theme.foreground),
+              ),
+              SizedBox(width: theme.spacing * 1.25),
               Expanded(
-                child: Text(
-                  widget.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.labelStyle.copyWith(
-                    color: widget.isSelected ? theme.accent : color,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.labelStyle.copyWith(color: theme.foreground),
+                    ),
+                    SizedBox(height: theme.spacing * 0.25),
+                    Text(
+                      widget.value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.subtitleStyle.copyWith(color: theme.mutedForeground),
+                    ),
+                  ],
                 ),
               ),
-              if (widget.value != null)
-                Padding(
-                  padding: EdgeInsets.only(left: theme.spacing),
-                  child: Text(
-                    widget.value!,
-                    style: theme.subtitleStyle.copyWith(color: theme.mutedForeground),
-                  ),
-                ),
-              if (widget.hasChildren)
-                Icon(Icons.chevron_right, size: theme.iconSize, color: theme.mutedForeground),
+              SizedBox(width: theme.spacing),
+              Icon(Icons.chevron_right, size: theme.iconSize, color: theme.mutedForeground),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+/// Slides a section in from [from] pixels away.
+///
+/// Deliberately not an `AnimatedSwitcher`: only one section is ever in the tree, so a row can
+/// never be found twice while the transition runs.
+class _SectionTransition extends StatelessWidget {
+  const _SectionTransition({required this.from, required this.child, super.key});
+
+  final double from;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, child) => Opacity(
+          opacity: t,
+          child: Transform.translate(offset: Offset(from * (1 - t), 0), child: child),
+        ),
+        child: child,
+      );
 }

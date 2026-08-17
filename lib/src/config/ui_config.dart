@@ -68,7 +68,8 @@ class FUiConfig {
   const FUiConfig({
     this.showControls = true,
     this.controlsTimeout = const Duration(seconds: 4),
-    this.showControlsOnStart = true,
+    this.showControlsOnStart = false,
+    this.showIdleProgressBar = true,
     this.keepControlsWhilePaused = true,
     this.showTitle = true,
     this.showBackButton = true,
@@ -80,7 +81,9 @@ class FUiConfig {
     this.showRemainingTime = false,
     this.showMuteButton = true,
     this.showSpeedButton = true,
-    this.showSettingsButton = true,
+    this.showAudioSubtitlesButton = true,
+    this.showQualityButton = true,
+    this.showSettingsButton = false,
     this.showFitButton = false,
     this.showLockButton = true,
     this.showPipButton = true,
@@ -96,6 +99,14 @@ class FUiConfig {
   /// Preset for a leanback build: remote-first from the start, no touch gestures, larger chrome.
   const FUiConfig.tv({FPlayerTheme theme = const FPlayerTheme.tv()})
       : this(
+          // A remote needs something focused to start from, unlike a finger.
+          showControlsOnStart: true,
+          // A row of small targets is worse to walk with a D-pad than one list, so the panel
+          // takes over from the dedicated buttons.
+          showSettingsButton: true,
+          showAudioSubtitlesButton: false,
+          showQualityButton: false,
+          showSpeedButton: false,
           showLockButton: false,
           showPipButton: false,
           showFullscreenButton: false,
@@ -110,6 +121,7 @@ class FUiConfig {
       : showControls = false,
         controlsTimeout = const Duration(seconds: 4),
         showControlsOnStart = false,
+        showIdleProgressBar = false,
         keepControlsWhilePaused = false,
         showTitle = false,
         showBackButton = false,
@@ -121,6 +133,8 @@ class FUiConfig {
         showRemainingTime = false,
         showMuteButton = false,
         showSpeedButton = false,
+        showAudioSubtitlesButton = false,
+        showQualityButton = false,
         showSettingsButton = false,
         showFitButton = false,
         showLockButton = false,
@@ -139,7 +153,16 @@ class FUiConfig {
   final Duration controlsTimeout;
 
   /// Show the controls when the player first appears, then fade them out.
+  ///
+  /// Off by default: the picture is what someone opened the screen for, and the chrome is one tap
+  /// away. [showIdleProgressBar] keeps the position readable meanwhile.
   final bool showControlsOnStart;
+
+  /// A hairline of progress along the bottom edge while the controls are hidden.
+  ///
+  /// It is the one thing worth knowing without asking — how far in you are — and it costs no room
+  /// and no attention.
+  final bool showIdleProgressBar;
 
   /// Keep the controls up while paused instead of timing out.
   ///
@@ -166,6 +189,17 @@ class FUiConfig {
 
   final bool showMuteButton;
   final bool showSpeedButton;
+
+  /// One control for both track kinds, opening a dialog that shows them side by side.
+  ///
+  /// It appears only when there is something to pick: a second audio track, or any subtitles.
+  final bool showAudioSubtitlesButton;
+
+  /// The current rung, as a control. Appears only on adaptive media with more than one.
+  final bool showQualityButton;
+
+  /// The catch-all panel. Off on touch, where the buttons above cover the same ground in one tap
+  /// instead of two; on for `FUiConfig.tv()`, where a menu beats a row of small targets.
   final bool showSettingsButton;
   final bool showFitButton;
   final bool showLockButton;
@@ -190,6 +224,7 @@ class FUiConfig {
     bool? showControls,
     Duration? controlsTimeout,
     bool? showControlsOnStart,
+    bool? showIdleProgressBar,
     bool? keepControlsWhilePaused,
     bool? showTitle,
     bool? showBackButton,
@@ -201,6 +236,8 @@ class FUiConfig {
     bool? showRemainingTime,
     bool? showMuteButton,
     bool? showSpeedButton,
+    bool? showAudioSubtitlesButton,
+    bool? showQualityButton,
     bool? showSettingsButton,
     bool? showFitButton,
     bool? showLockButton,
@@ -217,6 +254,7 @@ class FUiConfig {
         showControls: showControls ?? this.showControls,
         controlsTimeout: controlsTimeout ?? this.controlsTimeout,
         showControlsOnStart: showControlsOnStart ?? this.showControlsOnStart,
+        showIdleProgressBar: showIdleProgressBar ?? this.showIdleProgressBar,
         keepControlsWhilePaused: keepControlsWhilePaused ?? this.keepControlsWhilePaused,
         showTitle: showTitle ?? this.showTitle,
         showBackButton: showBackButton ?? this.showBackButton,
@@ -228,6 +266,9 @@ class FUiConfig {
         showRemainingTime: showRemainingTime ?? this.showRemainingTime,
         showMuteButton: showMuteButton ?? this.showMuteButton,
         showSpeedButton: showSpeedButton ?? this.showSpeedButton,
+        showAudioSubtitlesButton:
+            showAudioSubtitlesButton ?? this.showAudioSubtitlesButton,
+        showQualityButton: showQualityButton ?? this.showQualityButton,
         showSettingsButton: showSettingsButton ?? this.showSettingsButton,
         showFitButton: showFitButton ?? this.showFitButton,
         showLockButton: showLockButton ?? this.showLockButton,
