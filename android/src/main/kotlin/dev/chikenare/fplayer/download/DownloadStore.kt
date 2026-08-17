@@ -264,7 +264,13 @@ internal object DownloadStore {
  * re-hydrated from the index when the queue is first read.
  */
 internal object DownloadHeaders {
-    private val byUri = mutableMapOf<String, Map<String, String>>()
+    /**
+     * Concurrent because it is written from the main thread — enqueue, remove, re-hydrate — and
+     * read from the download worker pool and ExoPlayer's loader threads, which resolve headers
+     * per segment. A plain map threw `ConcurrentModificationException` inside the data source
+     * mid-download: one download failing because another was enqueued.
+     */
+    private val byUri = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
 
     fun register(
         uri: String,

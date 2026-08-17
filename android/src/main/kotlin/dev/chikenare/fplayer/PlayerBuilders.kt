@@ -17,7 +17,11 @@ internal object PlayerBuilders {
     fun loadControl(buffering: Map<String, Any?>): LoadControl {
         val builder = DefaultLoadControl.Builder()
 
-        val minBuffer = buffering.int("minBufferMs") ?: DefaultLoadControl.DEFAULT_MIN_BUFFER_MS
+        // Clamped rather than trusted: ExoPlayer throws on a negative duration, and that throw
+        // lands in the middle of building a player that already owns a texture and a session.
+        val minBuffer =
+            (buffering.int("minBufferMs") ?: DefaultLoadControl.DEFAULT_MIN_BUFFER_MS)
+                .coerceAtLeast(0)
         val maxBuffer =
             (buffering.int("maxBufferMs") ?: DefaultLoadControl.DEFAULT_MAX_BUFFER_MS)
                 .coerceAtLeast(minBuffer)
@@ -25,12 +29,12 @@ internal object PlayerBuilders {
             (
                 buffering.int("bufferForPlaybackMs")
                     ?: DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS
-            ).coerceAtMost(minBuffer)
+            ).coerceIn(0, minBuffer)
         val afterRebuffer =
             (
                 buffering.int("bufferForPlaybackAfterRebufferMs")
                     ?: DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
-            ).coerceAtMost(minBuffer)
+            ).coerceIn(0, minBuffer)
 
         builder.setBufferDurationsMs(minBuffer, maxBuffer, forPlayback, afterRebuffer)
 

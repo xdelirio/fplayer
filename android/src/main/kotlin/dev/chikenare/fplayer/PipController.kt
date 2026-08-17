@@ -80,9 +80,12 @@ internal class PipController(
     }
 
     fun detach() {
+        disarmAutoEnter()
         activity?.unregisterComponentCallbacks(configCallbacks)
         activity = null
         unregisterReceiver()
+        // The button Dart is showing now leads nowhere: with no Activity, `isSupported` is false.
+        syncState()
     }
 
     fun setOwner(owner: Owner?) {
@@ -93,7 +96,30 @@ internal class PipController(
 
     /** Drops [owner] only if it is the one currently registered, so disposal cannot steal PiP. */
     fun releaseOwner(owner: Owner) {
-        if (this.owner === owner) setOwner(null)
+        if (this.owner !== owner) return
+        disarmAutoEnter()
+        setOwner(null)
+    }
+
+    /**
+     * Tells the system to stop shrinking this Activity into PiP when the user leaves.
+     *
+     * The parameters set with `setAutoEnterEnabled(true)` live on the Activity, not on the
+     * player, and nothing clears them when the player goes away. Left armed, pressing Home from
+     * a settings screen — long after the video was closed — put the app into a PiP window with
+     * no video in it, for the rest of the Activity's life.
+     */
+    private fun disarmAutoEnter() {
+        if (!autoEnterRequested) return
+        autoEnterRequested = false
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val activity = activity ?: return
+        runCatching {
+            activity.setPictureInPictureParams(
+                PictureInPictureParams.Builder().setAutoEnterEnabled(false).build(),
+            )
+        }
     }
 
     /**

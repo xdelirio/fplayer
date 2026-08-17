@@ -205,6 +205,9 @@ internal class DownloadBridge(
             payload = DownloadStore.encodePayload(call.argument<String>("metadata"), headers),
             onResult = { request ->
                 send(request)
+                // Answered before publishing: `publish` reaches the Flutter sink, and anything
+                // it throws is routed to `onError` below — which would reply a second time and
+                // crash the platform thread with "reply already submitted".
                 result.success(null)
                 publish()
             },

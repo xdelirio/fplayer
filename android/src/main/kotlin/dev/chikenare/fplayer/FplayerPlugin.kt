@@ -66,6 +66,11 @@ class FplayerPlugin :
         downloads = null
         channel?.setMethodCallHandler(null)
         channel = null
+        // Detached explicitly rather than dropped: the PiP controller registers a receiver on the
+        // *application* context, which is a GC root — an unbalanced detach would pin it, and the
+        // Activity through it. The framework happens to detach the activity first today; this
+        // does not depend on that.
+        pip?.detach()
         pip = null
         this.binding = null
     }

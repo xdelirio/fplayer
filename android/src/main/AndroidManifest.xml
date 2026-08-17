@@ -1,3 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Read by NetworkWatcher to park playback instead of failing it when the signal goes. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Held by ExoPlayer itself, tied to isPlaying, so that playback with the screen off does
+         not stutter every time the CPU suspends between buffer fills. See setWakeMode. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 </manifest>

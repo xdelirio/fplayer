@@ -52,10 +52,12 @@ internal class PlayerHost(
     private val methodChannel = MethodChannel(messenger, Channels.method(playerId))
     private val eventChannel = EventChannel(messenger, Channels.events(playerId))
 
-    private val player: ExoPlayer
-    private val trackSelector: DefaultTrackSelector
-    private val tracks: TrackController
-    private val progressIntervalMs: Long
+    // `lateinit`, because construction is wrapped in a try/catch that has to be able to release
+    // whatever was built before a failure — see `init`.
+    private lateinit var player: ExoPlayer
+    private lateinit var trackSelector: DefaultTrackSelector
+    private lateinit var tracks: TrackController
+    private var progressIntervalMs: Long = 250L
     private var needsSurface = true
     private var isDisposed = false
     private var hasReportedInitialized = false
@@ -128,6 +130,19 @@ internal class PlayerHost(
         }
 
     init {
+        // Everything below allocates something that has to be released: a texture, an ExoPlayer,
+        // a process-wide MediaSession registration that also starts a service. A throw halfway
+        // through — a bad buffering config is enough — used to leave every one of them running
+        // with nobody holding a reference, for the life of the process.
+        try {
+            build(config)
+        } catch (error: Throwable) {
+            dispose()
+            throw error
+        }
+    }
+
+    private fun build(config: Map<String, Any?>) {
         val playback = config.map("playback")
         progressIntervalMs = (playback.long("progressIntervalMs") ?: 250L).coerceAtLeast(50L)
 
@@ -178,13 +193,23 @@ internal class PlayerHost(
         surfaceProducer.setCallback(this)
         attachSurface()
 
+        val background = config.map("background")
         mediaSession =
             MediaSessionAttachment.attach(
                 context = context,
                 playerId = playerId,
                 player = player,
-                background = config.map("background"),
+                background = background,
             )
+
+        // Playing on with the screen off is the whole point of a media session, and nothing was
+        // keeping the CPU awake to serve it: between buffer fills the device suspends and audio
+        // stutters or stops. Media3 acquires and releases the lock itself, tied to `isPlaying`,
+        // so there is no release path here to get wrong. Only armed when background playback was
+        // actually asked for — a foreground-only player has the screen keeping it awake.
+        if (background.bool("mediaSession") == true) {
+            runCatching { player.setWakeMode(C.WAKE_MODE_NETWORK) }
+        }
 
         methodChannel.setMethodCallHandler(this)
         eventChannel.setStreamHandler(
@@ -530,6 +555,9 @@ internal class PlayerHost(
     /** A failure worth waiting out: caused by the transport, and the transport is gone. */
     private fun shouldWaitForNetwork(code: String?): Boolean =
         waitForNetwork &&
+            // Only worth parking on if something can wake us: a watcher that failed to register
+            // will never report the network coming back, and the spinner would never end.
+            networkWatcher.isWatching &&
             (code == "network" || code == "timeout" || code == "io") &&
             !networkWatcher.isOnline()
 
@@ -755,23 +783,27 @@ internal class PlayerHost(
         if (isDisposed) return
         isDisposed = true
 
-        stopTicker()
-        networkWatcher.stop()
-        window.release(playerId)
-        methodChannel.setMethodCallHandler(null)
-        eventChannel.setStreamHandler(null)
-        events.endOfStream()
+        // Every step is guarded: this also runs as the unwind path for a construction that threw
+        // partway, where some of what follows was never built.
+        runCatching { stopTicker() }
+        runCatching { networkWatcher.stop() }
+        runCatching { window.release(playerId) }
+        runCatching { methodChannel.setMethodCallHandler(null) }
+        runCatching { eventChannel.setStreamHandler(null) }
+        runCatching { events.endOfStream() }
 
-        pip.releaseOwner(this)
+        runCatching { pip.releaseOwner(this) }
         // Before the player is released: the session holds a reference to it.
-        mediaSession?.release()
+        runCatching { mediaSession?.release() }
         mediaSession = null
 
-        player.removeListener(this)
-        player.release()
+        if (this::player.isInitialized) {
+            runCatching { player.removeListener(this) }
+            runCatching { player.release() }
+        }
 
-        surfaceProducer.setCallback(null)
-        surfaceProducer.release()
+        runCatching { surfaceProducer.setCallback(null) }
+        runCatching { surfaceProducer.release() }
     }
 
     private companion object {

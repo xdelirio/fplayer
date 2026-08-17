@@ -189,10 +189,15 @@ internal object DownloadSelector {
                     helper: DownloadHelper,
                     isLive: Boolean,
                 ) {
+                    var answered = false
                     try {
                         onPrepared(helper)
+                        answered = true
                     } catch (e: Exception) {
-                        onError(e)
+                        // Only when the callback did not get far enough to answer itself. A
+                        // failure *after* it replied — the Flutter sink throwing on the way out,
+                        // say — must not turn into a second reply on the same result.
+                        if (!answered) onError(e)
                     } finally {
                         helper.release()
                     }

@@ -88,6 +88,9 @@ internal object MediaSessionRegistry {
     private val sessions = linkedMapOf<Long, MediaSession>()
     private var service: FplayerMediaService? = null
 
+    /** Whether `startService` has been called for a service the system has not created yet. */
+    private var isStartRequested = false
+
     data class NotificationOptions(
         val channelId: String,
         val channelName: String,
@@ -133,20 +136,43 @@ internal object MediaSessionRegistry {
             // and the service promotes itself once playback actually begins.
             runCatching {
                 context.startService(Intent(context, FplayerMediaService::class.java))
+                isStartRequested = true
             }
         }
     }
 
-    fun unregister(playerId: Long) {
+    fun unregister(
+        context: Context,
+        playerId: Long,
+    ) {
         val session = sessions.remove(playerId) ?: return
         service?.let { if (it.isSessionAdded(session)) it.removeSession(session) }
-        if (sessions.isEmpty()) service?.stopSelf()
+        if (sessions.isNotEmpty()) return
+
+        val running = service
+        if (running != null) {
+            running.stopSelf()
+            return
+        }
+        // Started but not yet created — a player opened and disposed in the same breath. Nothing
+        // exists to call `stopSelf` on, and without this the service would arrive to an empty
+        // registry and sit in the process with nothing to do and nobody to stop it.
+        if (isStartRequested) {
+            runCatching { context.stopService(Intent(context, FplayerMediaService::class.java)) }
+            isStartRequested = false
+        }
     }
 
     fun primary(): MediaSession? = sessions.values.firstOrNull()
 
     fun attachService(service: FplayerMediaService) {
         this.service = service
+        isStartRequested = false
+        // The last player went away while the service was still being created.
+        if (sessions.isEmpty()) {
+            service.stopSelf()
+            return
+        }
         sessions.values.forEach { session ->
             if (!service.isSessionAdded(session)) service.addSession(session)
         }

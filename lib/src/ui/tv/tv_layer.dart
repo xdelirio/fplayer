@@ -80,16 +80,22 @@ class FTvLayerState extends State<FTvLayer> {
   Widget build(BuildContext context) {
     if (widget.config.mode == FTvMode.disabled) return widget.child;
 
-    if (!_ui.areControlsVisible) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Focus follows the chrome: parked here while it is away, handed back to a real control when
+    // it returns. Without the second half, focus stays on a node that spans the whole player and
+    // contains every candidate, so directional traversal has nowhere to go and the remote is
+    // stuck — the controls are on screen and nothing answers.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      if (!_ui.areControlsVisible) {
         // `hasPrimaryFocus`, not `hasFocus`: every control is a descendant of this node, so
         // `hasFocus` is still true on the frame the chrome is taken away — and the focus it is
         // reporting is about to be dropped.
-        if (mounted && !_ui.areControlsVisible && !_parked.hasPrimaryFocus) {
-          _parked.requestFocus();
-        }
-      });
-    }
+        if (!_parked.hasPrimaryFocus) _parked.requestFocus();
+      } else if (_parked.hasPrimaryFocus) {
+        _parked.nextFocus();
+      }
+    });
 
     return PopScope(
       // Back gets to close the controls before it closes the player, but only while they are up.

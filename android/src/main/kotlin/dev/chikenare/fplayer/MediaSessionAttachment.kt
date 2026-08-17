@@ -14,11 +14,12 @@ import androidx.media3.session.MediaSession
  * session is still a perfectly working player.
  */
 internal class MediaSessionAttachment private constructor(
+    private val context: Context,
     private val playerId: Long,
     private val session: MediaSession,
 ) {
     fun release() {
-        MediaSessionRegistry.unregister(playerId)
+        MediaSessionRegistry.unregister(context, playerId)
         session.release()
     }
 
@@ -56,7 +57,7 @@ internal class MediaSessionAttachment private constructor(
                     ),
             )
 
-            return MediaSessionAttachment(playerId, session)
+            return MediaSessionAttachment(context.applicationContext, playerId, session)
         }
 
         /** Where tapping the notification takes the user: back into the app. */

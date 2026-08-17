@@ -31,6 +31,15 @@ internal class NetworkWatcher(
 
     private var isRegistered = false
 
+    /**
+     * Whether this watcher is actually listening.
+     *
+     * Registration can fail — no permission, or an OEM connectivity stack throwing under memory
+     * pressure — and a watcher that is not listening can never report the network coming back.
+     * Anything that parks playback waiting for that has to know.
+     */
+    val isWatching: Boolean get() = isRegistered
+
     /** Last state seen, so a restored network is only announced when it was actually lost. */
     private var wasOnline = true
 
