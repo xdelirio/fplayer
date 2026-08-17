@@ -1,4 +1,4 @@
-<title>Integrar fplayer</title>
+<title>Integrating fplayer</title>
 
 <style>
   /* Light palette — complete, and the ground everything else is derived from. */
@@ -299,82 +299,82 @@
 <div class="shell">
 
   <header class="masthead">
-    <p class="eyebrow">fplayer · guía de integración</p>
-    <h1>Meter el reproductor en tus apps</h1>
+    <p class="eyebrow">fplayer · integration guide</p>
+    <h1>Adding the player to your apps</h1>
     <p class="lede">
-      De cero a un vídeo reproduciéndose, y qué pedir al manifiesto según las funciones que
-      actives. Todo lo del manifiesto es opcional: el plugin no declara nada por su cuenta, para
-      que una app que solo reproduce no tenga que justificar permisos que no usa.
+      From zero to a video playing, and what the manifest needs depending on which features you
+      turn on. Everything in the manifest is optional: the plugin declares nothing on its own, so
+      an app that only plays video never has to justify permissions it doesn't use.
     </p>
   </header>
 
-  <nav class="toc" aria-label="Secciones">
+  <nav class="toc" aria-label="Sections">
     <ol>
-      <li><a href="#paquetes">Qué instalas</a></li>
-      <li><a href="#instalacion">Instalación</a></li>
-      <li><a href="#android">Configuración Android</a></li>
-      <li><a href="#minimo">Integración mínima</a></li>
-      <li><a href="#recetas">Recetas</a></li>
-      <li><a href="#ui">Personalizar la UI</a></li>
-      <li><a href="#muerde">Lo que muerde</a></li>
-      <li><a href="#comprobar">Comprobación rápida</a></li>
+      <li><a href="#packages">What you install</a></li>
+      <li><a href="#installation">Installation</a></li>
+      <li><a href="#android">Android setup</a></li>
+      <li><a href="#minimal">Minimal integration</a></li>
+      <li><a href="#recipes">Recipes</a></li>
+      <li><a href="#ui">Customising the UI</a></li>
+      <li><a href="#gotchas">What bites</a></li>
+      <li><a href="#checklist">Quick check</a></li>
     </ol>
   </nav>
 
   <main>
 
-    <section id="paquetes">
-      <h2>Qué instalas</h2>
-      <p>Tres paquetes separados a propósito. El primero es el único que casi siempre quieres.</p>
+    <section id="packages">
+      <h2>What you install</h2>
+      <p>Three packages, deliberately separate. The first one is the only one you almost always want.</p>
       <div class="scroller">
         <table>
           <thead>
-            <tr><th>Paquete</th><th>Para qué</th><th>Cuándo</th></tr>
+            <tr><th>Package</th><th>What for</th><th>When</th></tr>
           </thead>
           <tbody>
             <tr>
               <td><code>fplayer</code></td>
-              <td>El reproductor: Media3/ExoPlayer, UI, pistas, subtítulos, TV, PiP, descargas.</td>
-              <td><span class="pill">siempre</span></td>
+              <td>The player: Media3/ExoPlayer, UI, tracks, subtitles, TV, PiP, downloads.</td>
+              <td><span class="pill">always</span></td>
             </tr>
             <tr>
               <td><code>fplayer_telemetry</code></td>
-              <td>Cola persistente en disco y envío por lotes de las métricas a tu API.</td>
-              <td><span class="pill opt">si reportas a un backend</span></td>
+              <td>Persistent on-disk queue and batched delivery of metrics to your API.</td>
+              <td><span class="pill opt">if you report to a backend</span></td>
             </tr>
             <tr>
               <td><code>fplayer_fvp</code></td>
-              <td>Motor libmdk/FFmpeg de respaldo para códecs que Android no cubre.</td>
-              <td><span class="pill opt">solo si te hace falta</span></td>
+              <td>libmdk/FFmpeg fallback engine for codecs Android doesn't cover.</td>
+              <td><span class="pill opt">only if you need it</span></td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="bite">
-        <span class="tag">cuidado</span>
+        <span class="tag">careful</span>
         <p>
-          <strong><code>fplayer_fvp</code> pesa 11,5&nbsp;MB por ABI</strong> — más de 30&nbsp;MB
-          con tres — frente a 1–2&nbsp;MB de todo Media3, y lo paga el APK aunque nunca se active.
-          Está fuera del paquete base justo por eso. Añádelo solo si tienes contenido que no
-          reproduce: en la práctica, AV1 por software en Android anterior al&nbsp;12.
+          <strong><code>fplayer_fvp</code> weighs 11.5&nbsp;MB per ABI</strong> — over 30&nbsp;MB
+          with three — against 1–2&nbsp;MB for all of Media3, and the APK pays for it even if it
+          never kicks in. That is exactly why it sits outside the base package. Add it only if you
+          have content that won't play: in practice, software AV1 on Android below&nbsp;12.
         </p>
       </div>
     </section>
 
-    <section id="instalacion">
-      <h2>Instalación</h2>
-      <p>Todavía no está publicado en pub.dev, así que se referencia por ruta o por Git.</p>
-<pre><code><span class="c"># pubspec.yaml de tu app</span>
+    <section id="installation">
+      <h2>Installation</h2>
+      <p>It isn't published on pub.dev yet, so you reference it by path or by Git.</p>
+<pre><code><span class="c"># your app's pubspec.yaml</span>
 <span class="k">dependencies:</span>
   <span class="k">fplayer:</span>
     <span class="k">git:</span>
       <span class="k">url:</span> <span class="s">https://github.com/chikenare/fplayer.git</span>
       <span class="k">ref:</span> <span class="s">main</span>
 
-  <span class="c"># O durante el desarrollo, con el repo clonado al lado:</span>
+  <span class="c"># Or during development, with the repo cloned alongside:</span>
   <span class="c"># fplayer:</span>
   <span class="c">#   path: ../fplayer</span></code></pre>
-      <p>Los paquetes hermanos viven dentro del mismo repositorio:</p>
+      <p>The sibling packages live inside the same repository:</p>
 <pre><code><span class="k">  fplayer_telemetry:</span>
     <span class="k">git:</span>
       <span class="k">url:</span> <span class="s">https://github.com/chikenare/fplayer.git</span>
@@ -382,41 +382,41 @@
     </section>
 
     <section id="android">
-      <h2>Configuración de Android</h2>
+      <h2>Android setup</h2>
       <p>
-        Requisitos del módulo: <code>minSdk 24</code> y <code>compileSdk 36</code>. Flutter
-        3.44 o superior.
+        Module requirements: <code>minSdk 24</code> and <code>compileSdk 36</code>. Flutter
+        3.44 or newer.
       </p>
       <p>
-        El plugin solo declara <code>INTERNET</code>. Todo lo demás va en el manifiesto de tu app,
-        y solo si usas la función correspondiente.
+        The plugin only declares <code>INTERNET</code>. Everything else goes in your app's
+        manifest, and only if you use the matching feature.
       </p>
 
       <div class="scroller">
         <table>
           <thead>
-            <tr><th>Si usas…</th><th>Añade al manifiesto</th></tr>
+            <tr><th>If you use…</th><th>Add to the manifest</th></tr>
           </thead>
           <tbody>
             <tr>
-              <td>Streams por HTTP sin TLS</td>
-              <td><code>android:usesCleartextTraffic="true"</code> en <code>&lt;application&gt;</code></td>
+              <td>Streams over HTTP without TLS</td>
+              <td><code>android:usesCleartextTraffic="true"</code> on <code>&lt;application&gt;</code></td>
             </tr>
             <tr>
               <td>Picture-in-Picture</td>
-              <td><code>supportsPictureInPicture</code> y <code>resizeableActivity</code> en la Activity</td>
+              <td><code>supportsPictureInPicture</code> and <code>resizeableActivity</code> on the Activity</td>
             </tr>
             <tr>
-              <td>Sesión de medios o audio en background</td>
-              <td>El <code>&lt;service&gt;</code> de la sesión y tres permisos de foreground service</td>
+              <td>Media session or background audio</td>
+              <td>The session <code>&lt;service&gt;</code> and three foreground-service permissions</td>
             </tr>
             <tr>
-              <td>Descargas en background</td>
-              <td>El <code>&lt;service&gt;</code> de descargas y sus permisos</td>
+              <td>Background downloads</td>
+              <td>The download <code>&lt;service&gt;</code> and its permissions</td>
             </tr>
             <tr>
               <td>Android TV</td>
-              <td>Dos <code>&lt;uses-feature&gt;</code> marcadas como no obligatorias</td>
+              <td>Two <code>&lt;uses-feature&gt;</code> entries marked as not required</td>
             </tr>
           </tbody>
         </table>
@@ -427,9 +427,9 @@
     <span class="k">android:name=</span><span class="s">".MainActivity"</span>
     <span class="k">android:supportsPictureInPicture=</span><span class="s">"true"</span>
     <span class="k">android:resizeableActivity=</span><span class="s">"true"</span>
-    <span class="c">&lt;!-- el resto como lo tengas --&gt;</span> <span class="k">/&gt;</span></code></pre>
+    <span class="c">&lt;!-- the rest as you already have it --&gt;</span> <span class="k">/&gt;</span></code></pre>
 
-      <h3>Sesión de medios y audio en background</h3>
+      <h3>Media session and background audio</h3>
 <pre><code><span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.FOREGROUND_SERVICE"</span> <span class="k">/&gt;</span>
 <span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"</span> <span class="k">/&gt;</span>
 <span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.POST_NOTIFICATIONS"</span> <span class="k">/&gt;</span>
@@ -442,20 +442,20 @@
     <span class="k">&lt;/intent-filter&gt;</span>
 <span class="k">&lt;/service&gt;</span></code></pre>
       <div class="note">
-        <span class="tag">nota</span>
+        <span class="tag">note</span>
         <p>
-          Sin ese <code>&lt;service&gt;</code> la sesión se omite en silencio y
-          <code>controller.hasMediaSession</code> queda en <code>false</code>. Se comprueba antes
-          de construir nada, así que no revienta: simplemente no hay notificación ni controles en
-          la pantalla de bloqueo.
+          Without that <code>&lt;service&gt;</code> the session is skipped silently and
+          <code>controller.hasMediaSession</code> stays <code>false</code>. It is checked before
+          anything gets built, so nothing blows up: there is simply no notification and no
+          lock-screen controls.
         </p>
       </div>
 
-      <h3>Descargas en background</h3>
+      <h3>Background downloads</h3>
 <pre><code><span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.FOREGROUND_SERVICE"</span> <span class="k">/&gt;</span>
 <span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.FOREGROUND_SERVICE_DATA_SYNC"</span> <span class="k">/&gt;</span>
 <span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.POST_NOTIFICATIONS"</span> <span class="k">/&gt;</span>
-<span class="c">&lt;!-- solo para reanudar tras un reinicio del dispositivo --&gt;</span>
+<span class="c">&lt;!-- only to resume after a device reboot --&gt;</span>
 <span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.RECEIVE_BOOT_COMPLETED"</span> <span class="k">/&gt;</span>
 
 <span class="k">&lt;service android:name=</span><span class="s">"dev.chikenare.fplayer.download.FplayerDownloadService"</span>
@@ -466,7 +466,7 @@
     <span class="k">&lt;/intent-filter&gt;</span>
 <span class="k">&lt;/service&gt;</span></code></pre>
       <p>
-        Sin el servicio las descargas funcionan igual, pero solo mientras la app está viva.
+        Without the service downloads still work, but only while the app is alive.
       </p>
 
       <h3>Android TV</h3>
@@ -474,23 +474,23 @@
 <span class="k">&lt;uses-feature android:name=</span><span class="s">"android.software.leanback"</span> <span class="k">android:required=</span><span class="s">"false"</span> <span class="k">/&gt;</span></code></pre>
     </section>
 
-    <section id="minimo">
-      <h2>Integración mínima</h2>
-      <p>Un controlador, una fuente, un widget. Nada más es obligatorio.</p>
+    <section id="minimal">
+      <h2>Minimal integration</h2>
+      <p>One controller, one source, one widget. Nothing else is required.</p>
 <pre><code><span class="k">import</span> <span class="s">'package:fplayer/fplayer.dart'</span>;
 
-<span class="k">class</span> _PantallaState <span class="k">extends</span> State&lt;Pantalla&gt; {
+<span class="k">class</span> _ScreenState <span class="k">extends</span> State&lt;Screen&gt; {
   <span class="k">late final</span> _controller = FPlayerController();
 
   @override
   <span class="k">void</span> initState() {
     <span class="k">super</span>.initState();
-    _controller.open(FPlayerSource.network(<span class="s">'https://cdn.tuapp.com/master.m3u8'</span>));
+    _controller.open(FPlayerSource.network(<span class="s">'https://cdn.yourapp.com/master.m3u8'</span>));
   }
 
   @override
   <span class="k">void</span> dispose() {
-    _controller.dispose();  <span class="c">// libera el player nativo y la textura</span>
+    _controller.dispose();  <span class="c">// releases the native player and the texture</span>
     <span class="k">super</span>.dispose();
   }
 
@@ -498,69 +498,70 @@
   Widget build(BuildContext context) =&gt; FPlayerView(controller: _controller);
 }</code></pre>
       <p>
-        <code>FPlayerView</code> se dimensiona a la relación de aspecto del vídeo, así que entra
-        en una <code>Column</code> sin envolturas. Si prefieres montar tu propia interfaz, las
-        capas están sueltas: <code>FVideoSurface</code>, <code>FSubtitleView</code>,
-        <code>FProgressBar</code>, <code>FSettingsPanel</code>, <code>FErrorView</code>.
+        <code>FPlayerView</code> sizes itself to the video's aspect ratio, so it drops into a
+        <code>Column</code> without wrappers. If you would rather build your own interface, the
+        layers are available on their own: <code>FVideoSurface</code>,
+        <code>FSubtitleView</code>, <code>FProgressBar</code>, <code>FSettingsPanel</code>,
+        <code>FErrorView</code>.
       </p>
     </section>
 
-    <section id="recetas">
-      <h2>Recetas</h2>
+    <section id="recipes">
+      <h2>Recipes</h2>
 
-      <h3>Contenido autenticado</h3>
+      <h3>Authenticated content</h3>
       <p>
-        Los headers se aplican a la petición del manifiesto, a cada segmento y a cada petición de
-        rango. Un subtítulo externo recibe <em>solo</em> los suyos: el token del CDN nunca viaja a
-        un servidor de subtítulos de terceros.
+        Headers are applied to the manifest request, to every segment and to every range request.
+        An external subtitle gets <em>only</em> its own: the CDN token never travels to a
+        third-party subtitle server.
       </p>
 <pre><code>FPlayerSource.network(
   url,
   headers: {<span class="s">'Authorization'</span>: <span class="s">'Bearer $token'</span>},
   subtitles: [
     FSubtitleSource.network(
-      <span class="s">'https://subs.otrodominio.com/es.vtt'</span>,
-      label: <span class="s">'Español'</span>,
+      <span class="s">'https://subs.otherdomain.com/es.vtt'</span>,
+      label: <span class="s">'Spanish'</span>,
       language: <span class="s">'es'</span>,
-      headers: {<span class="s">'X-Api-Key'</span>: clave},
+      headers: {<span class="s">'X-Api-Key'</span>: key},
     ),
   ],
 )</code></pre>
 
-      <h3>Reanudar donde lo dejó</h3>
-<pre><code><span class="c">// Al abrir</span>
-FPlayerSource.network(url, startAt: posicionGuardada)
+      <h3>Resume where they left off</h3>
+<pre><code><span class="c">// When opening</span>
+FPlayerSource.network(url, startAt: savedPosition)
 
-<span class="c">// Al guardar: el stream de eventos evita escribir en cada frame</span>
-_controller.events.listen((evento) {
-  <span class="k">if</span> (evento <span class="k">is</span> FPositionChanged) guardarCada30s(evento.position);
-  <span class="k">if</span> (evento <span class="k">is</span> FCompleted) marcarComoVisto();
+<span class="c">// When saving: the event stream avoids writing on every frame</span>
+_controller.events.listen((event) {
+  <span class="k">if</span> (event <span class="k">is</span> FPositionChanged) saveEvery30s(event.position);
+  <span class="k">if</span> (event <span class="k">is</span> FCompleted) markAsWatched();
 });</code></pre>
 
-      <h3>Serie con reproducción encadenada</h3>
-<pre><code><span class="k">await</span> _controller.setPlaylist(episodios, startIndex: 2);
+      <h3>A series that plays straight through</h3>
+<pre><code><span class="k">await</span> _controller.setPlaylist(episodes, startIndex: 2);
 
-_controller.value.currentIndex;    <span class="c">// posición en la cola</span>
-_controller.value.nextInPlaylist;  <span class="c">// qué viene después</span></code></pre>
+_controller.value.currentIndex;    <span class="c">// position in the queue</span>
+_controller.value.nextInPlaylist;  <span class="c">// what comes next</span></code></pre>
       <p>
-        Pasa al siguiente solo al terminar, y cerca del final aparece la tarjeta de «a
-        continuación». Marca los tramos que se pueden saltar y el botón sale solo:
+        It moves on by itself when an item ends, and the "up next" card appears near the end. Mark
+        the spans that can be skipped and the button shows up on its own:
       </p>
 <pre><code>chapters: [
   FChapter(start: Duration.zero, end: Duration(seconds: <span class="s">45</span>),
            title: <span class="s">'Intro'</span>, kind: FChapterKind.intro),
-  FChapter(start: Duration(seconds: <span class="s">45</span>), title: <span class="s">'Episodio'</span>),
+  FChapter(start: Duration(seconds: <span class="s">45</span>), title: <span class="s">'Episode'</span>),
 ]</code></pre>
 
-      <h3>Build para Android TV</h3>
+      <h3>Android TV build</h3>
 <pre><code>FPlayerView(
   controller: _controller,
-  config: FUiConfig.tv(),  <span class="c">// mando desde el primer frame, chrome más grande</span>
+  config: FUiConfig.tv(),  <span class="c">// remote-first from the first frame, larger chrome</span>
 )</code></pre>
       <p>
-        En una app que va a móvil y a TV a la vez no hace falta hacer nada: el modo por defecto es
-        <code>FTvMode.auto</code>, que no cambia nada hasta que llega la primera tecla direccional
-        y a partir de ahí muestra el anillo de foco.
+        In an app that ships to phones and TVs at once you need to do nothing: the default is
+        <code>FTvMode.auto</code>, which changes nothing until the first directional key arrives
+        and shows the focus ring from then on.
       </p>
 
       <h3>Picture-in-Picture</h3>
@@ -568,53 +569,53 @@ _controller.value.nextInPlaylist;  <span class="c">// qué viene después</span>
   config: FPlayerConfig(pip: FPipConfig(autoEnterOnLeave: <span class="k">true</span>)),
 )</code></pre>
       <div class="bite">
-        <span class="tag">cuidado</span>
+        <span class="tag">careful</span>
         <p>
-          La ventana de PiP refleja <strong>todo</strong> el árbol de Flutter, no solo el vídeo.
-          Usa <code>isPipActive</code> para desnudar la interfaz mientras dura, o el usuario verá
-          tu lista de episodios encogida dentro de la miniatura.
+          The PiP window mirrors <strong>the whole</strong> Flutter tree, not just the video. Use
+          <code>isPipActive</code> to strip the interface down while it lasts, or the viewer will
+          see your episode list shrunk inside the thumbnail.
         </p>
       </div>
 <pre><code><span class="k">if</span> (_controller.value.isPipActive) {
   <span class="k">return</span> FPlayerView(controller: _controller, config: <span class="k">const</span> FUiConfig.bare());
 }</code></pre>
 
-      <h3>Descargas offline</h3>
+      <h3>Offline downloads</h3>
 <pre><code><span class="k">await</span> FDownloadManager.instance.initialize(
   <span class="k">const</span> FDownloadConfig(requirements: FDownloadRequirements.unmeteredOnly()),
 );
 
-<span class="k">final</span> opciones = <span class="k">await</span> FDownloadManager.instance.inspect(fuente);
+<span class="k">final</span> options = <span class="k">await</span> FDownloadManager.instance.inspect(source);
 <span class="k">await</span> FDownloadManager.instance.enqueue(
-  fuente,
-  selection: <span class="k">const</span> FDownloadSelection.standard(),  <span class="c">// hasta 720p</span>
+  source,
+  selection: <span class="k">const</span> FDownloadSelection.standard(),  <span class="c">// up to 720p</span>
 );</code></pre>
       <p>
-        <code>FDownloadManager</code> es un <code>ChangeNotifier</code>: escúchalo y tienes la cola
-        con estado, progreso y bytes. Lo importante: <strong>una descarga completada se reproduce
-        con el mismo <code>FPlayerSource.network</code> de siempre</strong> — la caché está
-        indexada por URI, así que el sitio donde llamas a <code>open()</code> no sabe que los bytes
-        son locales.
+        <code>FDownloadManager</code> is a <code>ChangeNotifier</code>: listen to it and you have
+        the queue with state, progress and bytes. The part that matters: <strong>a finished
+        download plays through the same <code>FPlayerSource.network</code> as always</strong> —
+        the cache is keyed by URI, so the place where you call <code>open()</code> has no idea the
+        bytes are local.
       </p>
 
-      <h3>Métricas de reproducción</h3>
+      <h3>Playback metrics</h3>
 <pre><code><span class="k">final</span> tracker = FPlaybackSessionTracker(
   controller: _controller,
-  observers: [MiObservador()],
+  observers: [MyObserver()],
 );
 <span class="c">// ...</span>
 tracker.dispose();</code></pre>
       <p>
-        Se engancha desde fuera: escucha al controlador, no lo modifica. Deriva tiempo visto real
-        —sin pausas ni atascos, ajustado por velocidad—, tiempo hasta el primer frame, rebuffers,
-        cambios de calidad y seeks. Para enviarlo a tu API con cola persistente y reintentos, usa
-        <code>fplayer_telemetry</code>.
+        It attaches from the outside: it listens to the controller, it does not modify it. It
+        derives real watch time — without pauses or stalls, adjusted for playback speed — time to
+        first frame, rebuffers, quality changes and seeks. To ship that to your API with a
+        persistent queue and retries, use <code>fplayer_telemetry</code>.
       </p>
     </section>
 
     <section id="ui">
-      <h2>Personalizar la UI</h2>
-      <p><code>FUiConfig</code> decide qué se muestra; los builders deciden cómo.</p>
+      <h2>Customising the UI</h2>
+      <p><code>FUiConfig</code> decides what is shown; the builders decide how.</p>
 <pre><code>FPlayerView(
   controller: _controller,
   config: <span class="k">const</span> FUiConfig(
@@ -623,88 +624,88 @@ tracker.dispose();</code></pre>
     showLockButton: <span class="k">false</span>,
     controlsTimeout: Duration(seconds: <span class="s">3</span>),
   ),
-  bottomBarBuilder: (context, ui) =&gt; MiBarra(ui: ui),
+  bottomBarBuilder: (context, ui) =&gt; MyBottomBar(ui: ui),
 )</code></pre>
       <p>
-        Dentro de cualquier builder, <code>FPlayerScope.of(context)</code> da el mismo estado de
-        vista que usan los controles internos — visibilidad, bloqueo, scrub, encuadre — así que tu
-        barra puede reiniciar el auto-ocultar o iniciar un arrastre sin recablear nada.
+        Inside any builder, <code>FPlayerScope.of(context)</code> gives you the same view state
+        the built-in controls use — visibility, lock, scrub, fit — so your bar can restart the
+        auto-hide or begin a drag without rewiring anything.
       </p>
       <p>
-        Presets: <code>FUiConfig.bare()</code> deja solo el vídeo (los gestos siguen activos, para
-        alimentar tu propio overlay) y <code>FUiConfig.tv()</code> arma el layout leanback.
+        Presets: <code>FUiConfig.bare()</code> leaves only the video (the gestures stay live, to
+        feed your own overlay) and <code>FUiConfig.tv()</code> assembles the leanback layout.
       </p>
     </section>
 
-    <section id="muerde">
-      <h2>Lo que muerde</h2>
-      <p>Cosas que cuestan una tarde si nadie te las cuenta antes.</p>
+    <section id="gotchas">
+      <h2>What bites</h2>
+      <p>Things that cost an afternoon if nobody tells you first.</p>
 
       <div class="bite">
-        <span class="tag">contenido descargado</span>
+        <span class="tag">downloaded content</span>
         <p>
-          Un stream adaptativo descargado se reproduce restringido a las calidades que realmente
-          bajaste. Eso ya está resuelto dentro del paquete, pero si construyes tú la fuente por
-          otra vía, sin red el selector adaptativo alcanzará una calidad que no está en disco y el
-          stream morirá. MP4 progresivo no tiene este problema.
+          A downloaded adaptive stream plays restricted to the qualities you actually fetched.
+          That is already handled inside the package, but if you build the source some other way,
+          with no network the adaptive selector will reach for a quality that is not on disk and
+          the stream will die. Progressive MP4 does not have this problem.
         </p>
       </div>
 
       <div class="bite">
-        <span class="tag">tokens en disco</span>
+        <span class="tag">tokens on disk</span>
         <p>
-          Los headers de una descarga se guardan en el índice para que, reanudada tras un
-          reinicio, pueda volver a autenticarse. Eso deja un token en almacenamiento privado de la
-          app: usa tokens de vida corta.
+          A download's headers are stored in the index so that, resumed after a reboot, it can
+          authenticate again. That leaves a token in the app's private storage: use short-lived
+          tokens.
         </p>
       </div>
 
       <div class="bite">
-        <span class="tag">anchos impares</span>
+        <span class="tag">odd widths</span>
         <p>
-          Un vídeo de ancho impar —853×480, por ejemplo— puede hacer que MediaCodec falle al
-          configurarse aunque el sistema declare el formato soportado. Si un clip concreto no
-          reproduce y el error es «este dispositivo no puede reproducir este vídeo», mira las
-          dimensiones antes que el códec.
+          A video with an odd width — 853×480, for instance — can make MediaCodec fail to
+          configure even though the system reports the format as supported. If one particular clip
+          will not play and the error is "this device can't play this video", check the dimensions
+          before the codec.
         </p>
       </div>
 
       <div class="note">
-        <span class="tag">sin conexión</span>
+        <span class="tag">offline</span>
         <p>
-          Al perder la red la reproducción se aparca en lugar de fallar, y se reanuda desde la
-          misma posición cuando vuelve la señal. <code>isWaitingForNetwork</code> es lo que
-          distingue «cargando» de «esperando cobertura», por si tu UI quiere decirlo.
+          When the network drops, playback parks instead of failing, and resumes from the same
+          position once the signal is back. <code>isWaitingForNetwork</code> is what separates
+          "loading" from "waiting for coverage", in case your UI wants to say so.
         </p>
       </div>
 
       <div class="note">
         <span class="tag">FSourceType.auto</span>
         <p>
-          Deja el tipo en <code>auto</code> salvo que tu endpoint sirva un manifiesto sin extensión
-          <em>y</em> con un <code>Content-Type</code> incorrecto. El motor lo deduce mejor de la
-          URI y de la respuesta que tú de la ruta.
+          Leave the type on <code>auto</code> unless your endpoint serves a manifest with no
+          extension <em>and</em> a wrong <code>Content-Type</code>. The engine infers it from the
+          URI and the response better than you can from the path.
         </p>
       </div>
     </section>
 
-    <section id="comprobar">
-      <h2>Comprobación rápida</h2>
-      <p>Cuando integres en una app nueva, en este orden:</p>
+    <section id="checklist">
+      <h2>Quick check</h2>
+      <p>When integrating into a new app, in this order:</p>
       <ol>
-        <li>Reproduce un MP4 público sin headers. Si esto falla, es configuración de Gradle o de red, no del reproductor.</li>
-        <li>Reproduce tu HLS o DASH real con los headers de autenticación puestos.</li>
-        <li>Abre el panel de ajustes y comprueba que aparecen tus pistas de audio y subtítulos.</li>
-        <li>Gira el dispositivo y entra y sal de pantalla completa: no debe volver a cargar.</li>
-        <li>Corta el wifi a mitad de reproducción y vuelve a activarlo.</li>
-        <li>Si usas PiP o sesión de medios, pruébalos <strong>en un dispositivo físico</strong>.</li>
+        <li>Play a public MP4 with no headers. If this fails, it is Gradle or network configuration, not the player.</li>
+        <li>Play your real HLS or DASH with the authentication headers in place.</li>
+        <li>Open the settings panel and confirm your audio and subtitle tracks are listed.</li>
+        <li>Rotate the device, then enter and leave fullscreen: it must not reload.</li>
+        <li>Cut the wifi mid-playback and turn it back on.</li>
+        <li>If you use PiP or the media session, test them <strong>on a physical device</strong>.</li>
       </ol>
       <div class="bite">
-        <span class="tag">emuladores</span>
+        <span class="tag">emulators</span>
         <p>
-          El emulador de Android compone mal la ventana de PiP y a veces la deja en blanco aunque
-          todo esté bien configurado. No inviertas tiempo depurando PiP sin haberlo visto fallar
-          en hardware real.
+          The Android emulator composites the PiP window badly and sometimes leaves it blank even
+          when everything is configured correctly. Do not spend time debugging PiP without having
+          seen it fail on real hardware.
         </p>
       </div>
     </section>

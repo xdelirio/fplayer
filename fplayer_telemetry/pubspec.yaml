@@ -1,5 +1,5 @@
 name: fplayer_telemetry
-description: "Telemetría de reproducción para fplayer: cola persistente en disco, envío por lotes y reintentos con backoff."
+description: "Playback telemetry for fplayer: a persistent on-disk queue, batched delivery and retries with backoff."
 version: 0.1.0
 homepage: https://github.com/chikenare/fplayer
 repository: https://github.com/chikenare/fplayer/tree/main/fplayer_telemetry

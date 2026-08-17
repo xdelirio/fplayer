@@ -2,115 +2,115 @@
 
 ## 0.5.0
 
-Wakelock, brillo, DRM real y el motor `fvp` como paquete hermano. Cierra la fase 11.
+Wakelock, brightness, real DRM, and the `fvp` engine as a sibling package. Closes phase 11.
 
-### Añadido
+### Added
 
-- **La pantalla ya no se apaga viendo un video.** El flag se mantiene mientras los frames avanzan y se libera al pausar, con conteo de referencias entre players — un player pausado no puede apagar la pantalla debajo de otro que reproduce. Se desactiva con `FPlaybackConfig.keepScreenOn`.
-- **Gesto de brillo** en la mitad izquierda, que en la fase 3 quedó definido pero inerte a la espera de que el plugin tuviera la Activity. Afecta a la ventana de la app, no al ajuste del dispositivo, así que revierte solo al salir. También disponible como `controller.setBrightness()`.
-- **DRM Widevine de verdad.** `FDrmConfig` existía desde la fase 1 y se ignoraba en silencio; ahora llega al `MediaItem`, con los headers de licencia separados de los del media. Se añaden `playClearContentWithoutKey` y `forceDefaultLicenseUri`.
-- **`fplayer_fvp`**: paquete hermano con el motor libmdk/FFmpeg y `FFallbackEngine`, que usa Media3 y cae a libmdk solo cuando el códec no está soportado. Fuera del paquete base a propósito — pesa 11,5 MB por ABI frente a los 1-2 MB de todo Media3, y cierra un hueco estrecho: AV1 por software en Android anterior a 12.
+- **The screen no longer sleeps during playback.** The flag is held while frames advance and released on pause, reference-counted across players — a paused player cannot switch the screen off underneath one that is playing. Turn it off with `FPlaybackConfig.keepScreenOn`.
+- **Brightness gesture** on the left half, defined but inert since phase 3 while the plugin had no Activity. It affects the app's window rather than the device setting, so it reverts on its own when the app goes away. Also available as `controller.setBrightness()`.
+- **Real Widevine DRM.** `FDrmConfig` had been in the API since phase 1 and was silently ignored; it now reaches the `MediaItem`, with license headers kept separate from the media's. Adds `playClearContentWithoutKey` and `forceDefaultLicenseUri`.
+- **`fplayer_fvp`**: sibling package with the libmdk/FFmpeg engine and `FFallbackEngine`, which plays through Media3 and hands a source to libmdk only when the codec is unsupported. Outside the base package on purpose — it weighs 11.5 MB per ABI against 1–2 MB for all of Media3, and closes one narrow gap: AV1 by software on Android below 12.
 
-### Cambiado
+### Changed
 
-- **`FPlaybackEngine.textureId` ahora es `int?`.** Media3 asigna la textura al crear el player y la conserva; libmdk la dimensiona desde el frame decodificado, así que no existe hasta que hay medio preparado y la recrea por fuente.
-- El barrel exporta las señales del motor y `FMedia3Engine`, para que un motor externo pueda implementar la interfaz y componerse con el de serie.
+- **`FPlaybackEngine.textureId` is now `int?`.** Media3 allocates the texture when the player is created and keeps it; libmdk sizes its own from the decoded frame, so there is none until a source is prepared and it recreates one per source.
+- The barrel exports the engine signals and `FMedia3Engine`, so an external engine can implement the interface and compose with the built-in one.
 
-### Quitado
+### Removed
 
-- `FDrmConfig.forceL3`, que nunca funcionó: no existe forzado de nivel de seguridad en esa API de Media3.
+- `FDrmConfig.forceL3`, which never worked: there is no security-level override in that Media3 API.
 
 ## 0.4.0
 
-Cola de reproducción, robustez de red y descargas offline. Fases 8, 9 y parte de la 11.
+Playback queue, network resilience and offline downloads. Phases 8, 9 and part of 11.
 
-### Añadido
+### Added
 
-- **Cola de reproducción**: `setPlaylist`, `next`, `previous`, `jumpTo`, con `hasNext` / `hasPrevious` / `nextInPlaylist` en el estado, auto-avance al terminar y `repeatPlaylist`. Botones de pista anterior/siguiente y tarjeta de "a continuación" cerca del final, visible aunque los controles estén ocultos.
-- **Conciencia de conectividad**: al perder la red la reproducción se aparca en vez de quemar el presupuesto de reintentos, y se reanuda desde la misma posición cuando vuelve la señal. `FPlayerValue.isOnline` / `isOffline` / `isWaitingForNetwork`, evento `FConnectivityChanged`, y el spinner dice *"Esperando conexión…"* en vez de girar sin explicación. Se apaga con `FNetworkConfig.waitForNetwork`.
-- **`FSegmentRetryPolicy`**: la escalera *interna* de reintentos, por segmento / manifiesto / clave, sin que la reproducción salga de playing. Distinta de `FRetryPolicy`, que reintenta la fuente entera; los presupuestos se multiplican y ambas clases lo documentan.
-- **`FPlayerValue.bufferedAhead`**: media bufferizada por delante del playhead, que es la que predice un atasco. `buffered` es absoluta y no dice nada justo después de un seek.
-- **Descargas offline** (`FDownloadManager`): cola persistente sobre Media3, selección de qué renditions bajar con tamaño estimado por calidad, requisitos aplicados por el sistema (solo Wi-Fi, solo cargando), pausar / reanudar / borrar, y estado observable. Una descarga completada se reproduce con el mismo `FPlayerSource.network` de siempre.
-- **`FSeeked`**: evento de seek explícito.
+- **Playback queue**: `setPlaylist`, `next`, `previous`, `jumpTo`, with `hasNext` / `hasPrevious` / `nextInPlaylist` on the state, auto-advance at the end of an item, and `repeatPlaylist`. Previous/next track controls, and an "up next" card near the end that stays visible even with the chrome faded out.
+- **Connectivity awareness**: losing the network parks playback instead of burning the retry budget, and it resumes from the same position when the signal returns. `FPlayerValue.isOnline` / `isOffline` / `isWaitingForNetwork`, an `FConnectivityChanged` event, and a spinner that says *"Waiting for a connection…"* rather than turning with no explanation. Switch it off with `FNetworkConfig.waitForNetwork`.
+- **`FSegmentRetryPolicy`**: the *inner* retry ladder, per segment / manifest / key, without playback leaving the playing state. Distinct from `FRetryPolicy`, which retries the whole source; the budgets multiply, and both classes document it.
+- **`FPlayerValue.bufferedAhead`**: media buffered ahead of the playhead, which is the figure that predicts a stall. `buffered` is absolute and says nothing right after a seek.
+- **Offline downloads** (`FDownloadManager`): a persistent queue on Media3, a choice of which renditions to fetch with an estimated size per quality, requirements enforced by the platform (unmetered only, charging only), pause / resume / remove, and observable state. A completed download plays through the ordinary `FPlayerSource.network`.
+- **`FSeeked`**: an explicit seek event.
 
-### Corregido
+### Fixed
 
-- Un stream adaptativo descargado se reproduce ahora desde su `DownloadRequest`, restringido a las stream keys realmente bajadas. Antes, sin red, el selector adaptativo alcanzaba una calidad que no estaba en disco y el stream moría.
-- Un MP4 progresivo no se podía encolar: `DownloadHelper` no tiene información de pistas para media progresiva y consultarle por períodos lanzaba una excepción sin mensaje.
-- Una descarga encolada se quedaba en `queued` indefinidamente cuando la app no declara el servicio de descargas: nadie llamaba a `resumeDownloads()`, que es lo que normalmente hace ese servicio al crearse.
-- Los errores del puente de descargas con excepción sin mensaje ya no llegan a Dart como `null`.
+- A downloaded adaptive stream now plays from its `DownloadRequest`, constrained to the stream keys actually fetched. Before, offline, the adaptive selector reached for a quality that was never on disk and the stream died.
+- A progressive MP4 could not be queued: `DownloadHelper` has no track information for progressive media, and asking it about periods threw an exception with no message.
+- An enqueued download sat at `queued` forever when the app declares no download service: nobody called `resumeDownloads()`, which is what creating that service normally does.
+- Download bridge failures whose exception carries no message no longer reach Dart as `null`.
 
-### Requisitos de la app consumidora
+### Requirements for the consuming app
 
-Las descargas en background necesitan el `<service>` de `FplayerDownloadService` y permisos de foreground service; sin él funcionan solo mientras la app está viva. Ver el README.
+Background downloads need the `FplayerDownloadService` `<service>` and foreground-service permissions; without it they work only while the app is alive. See the README.
 
 ## 0.3.0
 
-UI completa, TV, storyboard, PiP, sesión de medios y analítica. Fases 3–7, 9 (UI) y 10 del plan.
+Full UI, TV, storyboard, PiP, media session and analytics. Phases 3–7, 9 (UI) and 10 of the plan.
 
-### Añadido
+### Added
 
-- **`FPlayerView`**: el player con su chrome — video, gestos, subtítulos, controles, panel de ajustes y estados de error. Cada banda es reemplazable por un builder, y dentro de cualquiera `FPlayerScope.of(context)` da el mismo estado de vista que usan los controles internos.
-- **`FUiConfig`** con presets `.bare()` (solo video) y `.tv()` (leanback), `FPlayerTheme` (+`.tv()`), `FPlayerLocalizations` (+`.spanish()`), `FGestureConfig`, `FFullscreenConfig`, `FTvConfig`.
-- **Gestos**: tocar para mostrar controles, doble toque para saltar o pausar según el tercio, arrastre horizontal para buscar con vista previa, arrastre vertical para volumen, mantener para acelerar, pellizcar para cambiar el encuadre.
-- **Fullscreen** reutilizando el mismo controller — y por tanto la misma textura — así que entrar y salir cuesta una transición de ruta, no una recarga. Orientación derivada de la forma del video e immersive sticky.
-- **Control remoto**: ←/→ hacen scrub con aceleración progresiva y commit diferido, ↑/↓ mueven el foco, teclas de medios actúan de inmediato, Back cierra los controles antes que el player. Modo `auto` que se activa con la primera tecla direccional, sin código nativo.
-- **Storyboard**: parser WebVTT con `#xywh`, caché LRU de sprite sheets con deduplicado de peticiones en vuelo, búsqueda binaria sobre miles de cues y recorte directo en canvas. Se conecta solo si la fuente declara uno.
-- **Capítulos**: marcas troqueladas en la barra y botón de saltar intro / resumen / créditos / anuncio.
-- **Picture-in-Picture**: `enterPip()`, auto-entrada al salir de la app, acciones dentro de la ventana, y `isPipSupported` / `isPipActive` para desnudar la UI mientras dura.
-- **MediaSession**: notificación, pantalla de bloqueo, botones de auriculares y metadatos de la fuente. Apagada por defecto.
-- **Background**: modos `stop`, `pause` y `continueAudio`. El controller es `WidgetsBindingObserver` y se resincroniza solo al volver.
-- **Analítica**: `FPlayerObserver` y `FPlaybackSessionTracker`, que derivan tiempo visto real (descontando pausas y atascos, ajustado por velocidad), tiempo hasta el primer frame, rebuffers, cambios de calidad y seeks — enganchándose desde fuera, sin tocar el core.
-- **`fplayer_telemetry`**: paquete hermano con cola persistente en disco, envío por lotes con backoff y respeto de `Retry-After`.
-- **`FSeeked`**: evento de seek explícito, para que un observador no tenga que inferirlo de un salto de posición.
+- **`FPlayerView`**: the player with its chrome — video, gestures, subtitles, controls, settings panel and error states. Every band is replaceable through a builder, and inside any of them `FPlayerScope.of(context)` gives the same view state the built-in controls use.
+- **`FUiConfig`** with `.bare()` (video only) and `.tv()` (leanback) presets, `FPlayerTheme` (+`.tv()`), `FPlayerLocalizations` (+`.spanish()`), `FGestureConfig`, `FFullscreenConfig`, `FTvConfig`.
+- **Gestures**: tap to reveal the controls, double tap to skip or toggle depending on the third, horizontal drag to scrub with a preview, vertical drag for volume, hold to speed up, pinch to change the fit.
+- **Fullscreen** reusing the same controller — and therefore the same texture — so entering and leaving costs a route transition rather than a reload. Orientation derived from the shape of the video, and immersive sticky.
+- **Remote control**: ←/→ scrub with progressive acceleration and a deferred commit, ↑/↓ move focus, media keys act immediately, Back closes the controls before it closes the player. An `auto` mode that switches on with the first directional key, needing no native code.
+- **Storyboard**: WebVTT parser with `#xywh`, an LRU cache of sprite sheets that de-duplicates in-flight requests, binary search over thousands of cues, and cropping straight onto the canvas. It wires itself up when the source declares one.
+- **Chapters**: boundaries punched out of the seek bar, and a button to skip an intro / recap / credits / ad.
+- **Picture-in-Picture**: `enterPip()`, auto-entry when leaving the app, actions inside the window, and `isPipSupported` / `isPipActive` so the UI can strip itself while it lasts.
+- **MediaSession**: notification, lock screen, headset buttons and metadata from the source. Off by default.
+- **Background**: `stop`, `pause` and `continueAudio` modes. The controller is a `WidgetsBindingObserver` and resynchronises itself on return.
+- **Analytics**: `FPlayerObserver` and `FPlaybackSessionTracker`, deriving real watched time (discounting pauses and stalls, adjusted for speed), time to first frame, rebuffers, quality changes and seeks — attached from outside, without touching the core.
+- **`fplayer_telemetry`**: sibling package with a persistent on-disk queue, batched delivery with backoff, and `Retry-After` honoured.
+- **`FSeeked`**: an explicit seek event, so an observer never has to infer one from a jump in position.
 
-### Cambiado
+### Changed
 
-- `FPipConfig` y `FBackgroundConfig` viven en `FPlayerConfig` junto al resto.
-- `FPlaybackConfig.seekStep` viaja al nativo, así que los botones de salto del PiP usan el paso de la app.
-- `FPlayerController` emite `FSpeedChanged` también cuando el cambio viene del motor.
+- `FPipConfig` and `FBackgroundConfig` live on `FPlayerConfig` alongside the rest.
+- `FPlaybackConfig.seekStep` travels to the native side, so the PiP skip actions use the app's own step.
+- `FPlayerController` emits `FSpeedChanged` when the change comes from the engine too.
 
-### Requisitos de la app consumidora
+### Requirements for the consuming app
 
-PiP necesita `android:supportsPictureInPicture="true"` y `android:resizeableActivity="true"` en la Activity. La sesión de medios necesita además el `<service>` de `FplayerMediaService` y los permisos de foreground service; sin él la sesión se omite en silencio y `hasMediaSession` queda en false. Ver el README.
+PiP needs `android:supportsPictureInPicture="true"` and `android:resizeableActivity="true"` on the Activity. The media session additionally needs the `FplayerMediaService` `<service>` and foreground-service permissions; without it the session is skipped silently and `hasMediaSession` stays false. See the README.
 
 ## 0.2.0
 
-Pistas y subtítulos. Fase 2 del plan.
+Tracks and subtitles. Phase 2 of the plan.
 
-### Añadido
+### Added
 
-- Enumeración de pistas de audio, subtítulos y calidad desde el manifiesto (`FTracks`, `FAudioTrack`, `FTextTrack`, `FVideoTrack`), con idioma, etiqueta, códec, bitrate, canales, resolución, fps y banderas de forzado / CC / audiodescripción.
-- Selección en caliente: `selectAudioTrack`, `selectTextTrack`, `selectVideoTrack`, `disableSubtitles`, `enableAutoQuality`.
-- Subtítulos externos por URL o archivo (SRT, VTT, ASS/SSA, TTML) declarados en `FPlayerSource.subtitles`, con headers propios por pista.
-- `addSubtitle` para adjuntar un subtítulo a la media ya cargada, conservando la posición.
-- Idiomas preferidos para la selección automática (`preferredAudioLanguages`, `preferredTextLanguages`, `autoSelectSubtitles`) y `setPreferredLanguages` en caliente.
-- Cues entregadas a Dart con su geometría (`FSubtitleCue`) y renderizadas en Flutter con `FSubtitleView`, con estilo configurable vía `FSubtitleStyle` (tamaño, escala de usuario, contorno, sombra, caja, márgenes).
-- `FTracksChanged` en el stream de eventos.
-- `FVideoTrack.qualityLabel` normaliza a peldaños reconocibles (`1080p`, `720p`…), corrigiendo el contenido más ancho que 16:9.
+- Enumeration of audio, subtitle and quality tracks from the manifest (`FTracks`, `FAudioTrack`, `FTextTrack`, `FVideoTrack`), with language, label, codec, bitrate, channels, resolution, frame rate and the forced / CC / audio-description flags.
+- Selection at runtime: `selectAudioTrack`, `selectTextTrack`, `selectVideoTrack`, `disableSubtitles`, `enableAutoQuality`.
+- External subtitles by URL or file (SRT, VTT, ASS/SSA, TTML) declared on `FPlayerSource.subtitles`, with per-track headers.
+- `addSubtitle`, to attach a subtitle to media already playing while keeping the position.
+- Preferred languages for automatic selection (`preferredAudioLanguages`, `preferredTextLanguages`, `autoSelectSubtitles`) and `setPreferredLanguages` at runtime.
+- Cues delivered to Dart with their geometry (`FSubtitleCue`) and rendered in Flutter by `FSubtitleView`, styled through `FSubtitleStyle` (size, user scale, outline, shadow, box, margins).
+- `FTracksChanged` on the event stream.
+- `FVideoTrack.qualityLabel` normalises to the rungs people recognise (`1080p`, `720p`…), correcting for content wider than 16:9.
 
-### Notas
+### Notes
 
-- Los headers se aplican por URI: un subtítulo alojado en otro dominio no recibe el `Authorization` del media.
-- `FTrack.isSelected` (está en la selección del motor) y `FTrack.isActive` (se está decodificando) son distintos: en modo adaptativo toda la escalera de calidades está seleccionada a la vez. Usa `FTracks.activeVideo` para saber qué se ve y `FTracks.selectedVideo` para saber qué fijó el usuario.
-- El ajuste de sincronía de subtítulos en caliente queda pendiente; `TextRenderer` de Media3 es `final` y no admite desplazar su reloj. Las alternativas están evaluadas en `docs/PLAN.md`.
+- Headers are applied per URI: a subtitle hosted on another domain never receives the media's `Authorization`.
+- `FTrack.isSelected` (in the engine's selection) and `FTrack.isActive` (being decoded) are different: in adaptive mode the whole quality ladder is selected at once. Use `FTracks.activeVideo` for what is on screen and `FTracks.selectedVideo` for what the user pinned.
+- Adjusting subtitle sync at runtime is still open; Media3's `TextRenderer` is `final` and does not allow shifting its clock. The alternatives are evaluated in `docs/PLAN.md`.
 
 ## 0.1.0
 
-Primera base funcional. Fases 0 y 1 del plan.
+First working base. Phases 0 and 1 of the plan.
 
-### Añadido
+### Added
 
-- Plugin Android nativo sobre Media3/ExoPlayer 1.11.0, con una instancia de player, textura y par de canales por controlador.
-- `FPlayerController` (`ChangeNotifier`) con estado inmutable en `FPlayerValue` y un stream de eventos discretos.
-- Fuentes: `FPlayerSource.network` / `.file` / `.asset`, con detección automática de HLS, DASH, SmoothStreaming y progresivo.
-- Headers HTTP por fuente, aplicados también a segmentos y peticiones de rango.
-- Reanudar en una posición con `startAt`.
-- Control de reproducción: play, pause, stop, seek absoluto y relativo, velocidad, volumen, mute, loop.
-- Configuración por áreas: `FPlaybackConfig`, `FBufferConfig`, `FNetworkConfig`, `FDecoderConfig`, con perfiles `FBufferConfig.fastStart()`, `.resilient()` y `FDecoderConfig.dataSaver()`.
-- Modos de decodificación: hardware primero (por defecto), software primero, solo hardware, solo software.
-- Taxonomía de errores (`FPlayerErrorCode`) con estado HTTP y marca de reintentable, más reintento automático con backoff exponencial y timeout de carga.
-- Recuperación automática de `BEHIND_LIVE_WINDOW` en directos.
-- `FVideoSurface`: textura con aspecto, rotación y modos de encuadre (`FVideoFit`).
-- `FPlaybackEngine`, la interfaz que permitirá añadir motores alternativos sin tocar las capas superiores.
-- App de ejemplo con HLS, DASH, MP4, verificación de headers y caso de error.
+- A native Android plugin over Media3/ExoPlayer 1.11.0, with one player instance, texture and pair of channels per controller.
+- `FPlayerController` (`ChangeNotifier`) with immutable state in `FPlayerValue` and a stream of discrete events.
+- Sources: `FPlayerSource.network` / `.file` / `.asset`, with automatic detection of HLS, DASH, SmoothStreaming and progressive.
+- Per-source HTTP headers, applied to segments and range requests too.
+- Resuming at a position with `startAt`.
+- Playback control: play, pause, stop, absolute and relative seek, speed, volume, mute, loop.
+- Configuration grouped by concern: `FPlaybackConfig`, `FBufferConfig`, `FNetworkConfig`, `FDecoderConfig`, with the `FBufferConfig.fastStart()`, `.resilient()` and `FDecoderConfig.dataSaver()` profiles.
+- Decoding modes: hardware first (the default), software first, hardware only, software only.
+- An error taxonomy (`FPlayerErrorCode`) carrying HTTP status and a retryable flag, plus automatic retry with exponential backoff and a loading timeout.
+- Automatic recovery from `BEHIND_LIVE_WINDOW` on live streams.
+- `FVideoSurface`: the texture with correct aspect, rotation and fit modes (`FVideoFit`).
+- `FPlaybackEngine`, the interface that lets alternative engines be added without touching the layers above.
+- An example app with HLS, DASH, MP4, header verification and an error case.

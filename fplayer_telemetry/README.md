@@ -1,12 +1,12 @@
 # fplayer_telemetry
 
-Telemetría de reproducción para [`fplayer`](../): cola persistente en disco, envío por lotes y reintentos con backoff.
+Playback telemetry for [`fplayer`](../): a persistent on-disk queue, batched delivery and retries with backoff.
 
-Vive fuera del paquete del reproductor a propósito. Reportar implica una cola en disco, un cliente HTTP y una política de reintentos; una app que no reporta no debería cargar con nada de eso.
+It lives outside the player package on purpose. Reporting means a queue on disk, an HTTP client and a retry policy; an app that does not report should carry none of it.
 
-## Cómo encaja
+## How it fits
 
-`fplayer` mide y expone; `fplayer_telemetry` encola y envía.
+`fplayer` measures and exposes; `fplayer_telemetry` queues and sends.
 
 ```
 FPlayerController
@@ -17,17 +17,17 @@ FPlaybackSessionTracker ──► FPlayerObserver
                                   │
                           FTelemetryReporter
                                   │
-                     FTelemetryQueue (JSONL en disco)
+                     FTelemetryQueue (JSONL on disk)
                                   │
                           FTelemetryClient (HTTP)
 ```
 
-## Uso
+## Usage
 
 ```dart
 final reporter = FTelemetryReporter(
   config: FTelemetryConfig(
-    endpoint: Uri.parse('https://api.ejemplo.com/telemetry'),
+    endpoint: Uri.parse('https://api.example.com/telemetry'),
     tokenProvider: () async => await auth.currentToken(),
     appVersion: '3.4.1',
     deviceType: 'phone',
@@ -41,45 +41,45 @@ final tracker = FPlaybackSessionTracker(
   progressInterval: reporter.config.progressInterval,
 );
 
-// Al cerrar la pantalla:
+// When the screen goes away:
 tracker.dispose();
-await reporter.dispose();   // intenta un último envío y deja el resto en disco
+await reporter.dispose();   // attempts one last send and leaves the rest on disk
 ```
 
-## Qué se envía
+## What gets sent
 
-Cada registro lleva **totales acumulados y deltas** desde el registro anterior de la misma sesión. Los totales permiten que un envío tardío corrija el panorama; los deltas permiten sumar sin preocuparse por duplicados.
+Every record carries **running totals and deltas** since the previous record of the same session. The totals let a late delivery correct the picture; the deltas let you sum without worrying about duplicates.
 
-| Tipo | Cuándo |
+| Kind | When |
 |---|---|
-| `start` | se abrió una fuente |
-| `firstFrame` | apareció la imagen, con `timeToFirstFrameMs` |
-| `progress` | cada `progressInterval` mientras se reproduce (nunca en pausa) |
-| `rebuffer` | se recuperó de un atasco |
-| `seek` | saltó la cabeza de reproducción |
-| `error` | fallo que el espectador vio (los reintentos no se reportan) |
-| `end` | terminó la sesión, con `endReason` |
+| `start` | a source was opened |
+| `firstFrame` | the picture appeared, with `timeToFirstFrameMs` |
+| `progress` | every `progressInterval` while playing, never while paused |
+| `rebuffer` | recovered from a stall |
+| `seek` | the playhead was moved |
+| `error` | a failure the viewer saw — retries are not reported |
+| `end` | the session finished, with `endReason` |
 
-Cuerpo de la petición:
+Request body:
 
 ```json
 { "events": [ { "sessionId": "01J…", "kind": "progress", "watchedDeltaMs": 30000, … } ] }
 ```
 
-## Entrega
+## Delivery
 
-- **Cola JSONL en disco**, acotada por `maxQueuedEvents` (500 por defecto). Al superarla se descartan los más antiguos.
-- **Lotes** de hasta `maxBatchSize` (50), vaciados cada `flushInterval` (60 s) y al terminar cada sesión.
-- **2xx** → entregado. **429 / 408 / 5xx / fallo de red** → se reintenta con backoff exponencial, honrando `Retry-After` (en segundos o como fecha HTTP). **Otros 4xx** → se descarta el lote, porque repetirlo no puede ayudar y si no la cola nunca drena.
-- Lo que no se pudo entregar **sobrevive al reinicio de la app**.
+- **JSONL queue on disk**, bounded by `maxQueuedEvents` (500 by default). Past that, the oldest are dropped.
+- **Batches** of up to `maxBatchSize` (50), flushed every `flushInterval` (60 s) and at the end of each session.
+- **2xx** → delivered. **429 / 408 / 5xx / network failure** → retried with exponential backoff, honouring `Retry-After` (in seconds or as an HTTP date). **Any other 4xx** → the batch is dropped, because repeating it cannot help and the queue would otherwise never drain.
+- Whatever could not be delivered **survives an app restart**.
 
-## Notas
+## Notes
 
-- La ruta del archivo de cola es inyectable (`queueFile:`); si no se indica, se resuelve con `path_provider`.
-- `FTelemetryClient` y `FTelemetryQueue` son inyectables, así que se puede testear el ciclo completo sin tocar red ni disco real.
-- Los metadatos de `FPlayerSource.metadata` se reducen a valores JSON-seguros; lo que no lo sea se convierte a texto en vez de romper la serialización de toda la cola.
-- `publish_to: none` mientras dependa de `fplayer` por ruta.
+- The queue file path is injectable (`queueFile:`); left unset, it is resolved through `path_provider`.
+- `FTelemetryClient` and `FTelemetryQueue` are injectable, so the whole cycle can be tested without touching a real network or disk.
+- Metadata from `FPlayerSource.metadata` is reduced to JSON-safe values; anything else is stringified rather than breaking serialisation for the entire queue.
+- `publish_to: none` while it depends on `fplayer` by path.
 
-## Licencia
+## License
 
 MIT

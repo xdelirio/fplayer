@@ -1,5 +1,5 @@
 name: fplayer_fvp
-description: "Motor libmdk/FFmpeg de respaldo para fplayer: reproduce códecs que los decodificadores de Android no cubren, como AV1 por software en Android anterior a 12."
+description: "A libmdk/FFmpeg fallback engine for fplayer: plays codecs Android's own decoders do not cover, chiefly AV1 by software on Android below 12."
 version: 0.1.0
 homepage: https://github.com/chikenare/fplayer
 repository: https://github.com/chikenare/fplayer

@@ -1,5 +1,5 @@
 name: fplayer
-description: "Reproductor de video para Flutter sobre Media3/ExoPlayer: HLS, DASH, archivos locales, headers HTTP, subtítulos externos, storyboard, TV y PiP."
+description: "A Flutter video player built on Media3/ExoPlayer: HLS, DASH, local files, HTTP headers, external subtitles, storyboard scrubbing, TV and PiP."
 version: 0.5.0
 homepage: https://github.com/chikenare/fplayer
 repository: https://github.com/chikenare/fplayer

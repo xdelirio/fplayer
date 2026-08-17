@@ -185,7 +185,7 @@ void main() {
             FTextTrack(
               id: 'text:0:0',
               index: 0,
-              label: 'Español',
+              label: 'Spanish',
               language: 'es',
               isSelected: false,
               isActive: false,
@@ -205,7 +205,7 @@ void main() {
     await tester.tap(find.text(const FPlayerLocalizations().subtitles));
     await tester.pump();
 
-    await tester.tap(find.text('Español'));
+    await tester.tap(find.text('Spanish'));
     await tester.pump();
 
     expect(engine.calls, contains('selectTrack:text:text:0:0'));

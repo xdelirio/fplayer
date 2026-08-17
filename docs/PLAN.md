@@ -1,103 +1,103 @@
-# fplayer — Plan de arquitectura y roadmap
+# fplayer — Architecture plan and roadmap
 
-> Estado: roadmap completo. Todas las fases implementadas y verificadas en dispositivo. Android-only.
-> Flutter 3.47 · Dart 3.13 · minSdk 24 (piso actual de Flutter) · compileSdk 36 · Media3 1.11.0
+> Status: roadmap complete. Every phase implemented and verified on device. Android-only.
+> Flutter 3.47 · Dart 3.13 · minSdk 24 (Flutter's current floor) · compileSdk 36 · Media3 1.11.0
 >
-> **Decisiones tomadas** — motor: plugin nativo Media3 · DRM: no requerido (solo ganchos, fase 11) · telemetría: paquete hermano `fplayer_telemetry`
+> **Decisions made** — engine: native Media3 plugin · DRM: not required (hooks only, phase 11) · telemetry: sibling package `fplayer_telemetry`
 
 ---
 
-## 1. Decisión de motor
+## 1. Engine decision
 
-### Recomendación: **plugin nativo propio sobre Media3 (ExoPlayer) 1.11.0**, con `fvp` como motor secundario opcional.
+### Recommendation: **our own native plugin on Media3 (ExoPlayer) 1.11.0**, with `fvp` as an optional secondary engine.
 
-`fvp` (libmdk + FFmpeg) es excelente, pero está optimizado para *cobertura de formatos y paridad multiplataforma*, no para *streaming adaptativo en Android*. Tus requisitos (HLS, DASH, headers, subtítulos externos, TV, PiP) caen justo del lado donde Media3 gana.
+`fvp` (libmdk + FFmpeg) is excellent, but it is tuned for *format coverage and cross-platform parity*, not for *adaptive streaming on Android*. Your requirements (HLS, DASH, headers, external subtitles, TV, PiP) land squarely on the side where Media3 wins.
 
-| Requisito | Media3 nativo | fvp (libmdk/FFmpeg) |
+| Requirement | Native Media3 | fvp (libmdk/FFmpeg) |
 |---|---|---|
-| HLS con **ABR real** (cambio de bitrate por ancho de banda) | Sí, `media3-exoplayer-hls` | **No.** El demuxer HLS de FFmpeg selecciona una variante; no hay escalera adaptativa |
-| DASH con ABR + multi-period | Sí, `media3-exoplayer-dash` | Parcial, sin ABR |
-| Selección de pistas (audio/sub/calidad) desde el manifest | Nativo (`TrackSelectionParameters`) | Limitado |
-| Headers HTTP por request / por pista | Nativo (`DataSource.Factory`) | Limitado a opciones globales |
-| Subtítulos externos con headers | Nativo (`SubtitleConfiguration`) | `setExternalSubtitle()`, sin headers |
-| **Widevine DRM** | Sí | **No existe** |
-| PiP, MediaSession, notificación, audio focus | `media3-session` + Activity PiP | Todo a mano |
-| Descargas offline | `DownloadManager` de Media3 | No |
-| Tamaño del APK | ~1-2 MB | **+10 MB por ABI** |
-| Decodificación HW | MediaCodec (default) | MediaCodec / FFmpeg |
-| **AV1 por software en Android < 12** | ❌ gap real | ✅ dav1d integrado |
-| Formatos exóticos (MKV raros, TS raros, AC3 en contenedores no estándar) | Bueno pero no total | ✅ mejor |
+| HLS with **real ABR** (bitrate switching by bandwidth) | Yes, `media3-exoplayer-hls` | **No.** FFmpeg's HLS demuxer picks one variant; there is no adaptive ladder |
+| DASH with ABR + multi-period | Yes, `media3-exoplayer-dash` | Partial, no ABR |
+| Track selection (audio/subs/quality) from the manifest | Native (`TrackSelectionParameters`) | Limited |
+| HTTP headers per request / per track | Native (`DataSource.Factory`) | Limited to global options |
+| External subtitles with headers | Native (`SubtitleConfiguration`) | `setExternalSubtitle()`, no headers |
+| **Widevine DRM** | Yes | **Does not exist** |
+| PiP, MediaSession, notification, audio focus | `media3-session` + Activity PiP | All by hand |
+| Offline downloads | Media3's `DownloadManager` | No |
+| APK size | ~1-2 MB | **+10 MB per ABI** |
+| HW decoding | MediaCodec (default) | MediaCodec / FFmpeg |
+| **Software AV1 on Android < 12** | ❌ real gap | ✅ dav1d bundled |
+| Exotic formats (odd MKVs, odd TS, AC3 in non-standard containers) | Good but not total | ✅ better |
 
-**El único hueco real de Media3 es AV1 por software en dispositivos viejos.** Y es más chico de lo que parece:
+**Media3's only real gap is software AV1 on old devices.** And it is smaller than it looks:
 
-- Android 12+ (API 31) trae `c2.android.av1.decoder` (libgav1) en la plataforma → ExoPlayer lo usa solo, sin hacer nada.
-- Android 10/11 con SoC moderno (Dimensity 1000+, SD 8 Gen 2+) tienen AV1 por hardware.
-- Verificado hoy: Google **no publica** `media3-decoder-av1` ni `media3-decoder-ffmpeg` en su Maven (solo `media3-decoder`, que es la infraestructura). Las extensiones hay que compilarlas con NDK o usar un prebuilt de terceros (`nextlib` — que soporta H264/HEVC/VP8/VP9 + muchos audios, **pero no AV1**).
+- Android 12+ (API 31) ships `c2.android.av1.decoder` (libgav1) in the platform → ExoPlayer picks it up on its own, with no work.
+- Android 10/11 devices with a modern SoC (Dimensity 1000+, SD 8 Gen 2+) have hardware AV1.
+- Verified today: Google **does not publish** `media3-decoder-av1` or `media3-decoder-ffmpeg` on its Maven (only `media3-decoder`, which is the plumbing). The extensions have to be built with the NDK, or you use a third-party prebuilt (`nextlib` — which covers H264/HEVC/VP8/VP9 + plenty of audio codecs, **but not AV1**).
 
-→ Por eso la arquitectura deja el motor **enchufable** (`FPlaybackEngine`), y `fvp` entra en una fase tardía como motor alternativo para ese caso concreto, activable por config o por fallback automático cuando Media3 reporta `ERROR_CODE_DECODING_FORMAT_UNSUPPORTED`.
+→ That is why the architecture keeps the engine **pluggable** (`FPlaybackEngine`), with `fvp` arriving in a late phase as an alternative engine for that one case, switched on by config or by automatic fallback when Media3 reports `ERROR_CODE_DECODING_FORMAT_UNSUPPORTED`.
 
-### Lo que descarto y por qué
+### What I am ruling out, and why
 
-- **`video_player` oficial**: sin selección de pistas, sin PiP, sin MediaSession, subtítulos solo por archivo local en Dart. Techo muy bajo.
-- **`better_player` / forks**: es lo que ya tenías; ExoPlayer 2 (deprecado), API acoplada, difícil de extender a TV/PiP como quieres.
-- **`media_kit`**: mismas limitaciones de ABR que fvp (es libmpv/FFmpeg) + peso, y su fuerte es desktop.
+- **Official `video_player`**: no track selection, no PiP, no MediaSession, subtitles only from a local file in Dart. Very low ceiling.
+- **`better_player` / forks**: what you already had; ExoPlayer 2 (deprecated), tightly coupled API, hard to extend to TV/PiP the way you want.
+- **`media_kit`**: the same ABR limitations as fvp (it is libmpv/FFmpeg) plus weight, and its strength is desktop.
 
 ---
 
-## 2. Arquitectura
+## 2. Architecture
 
-Cuatro capas, cada una usable por separado. Un consumidor puede tomar solo el controller y hacer su propia UI.
+Four layers, each usable on its own. A consumer can take just the controller and build their own UI.
 
 ```
-┌─ Capa 4: UI lista para usar ────────────────────────────┐
-│  FPlayerView · controles táctiles · controles TV        │
-│  overlays reemplazables por builders                    │
-├─ Capa 3: Estado ────────────────────────────────────────┤
-│  FPlayerController (ChangeNotifier) · FPlayerValue       │
-│  playlist · tracks · storyboard · analytics             │
-├─ Capa 2: Abstracción de motor ──────────────────────────┤
-│  FPlaybackEngine (interfaz) · Media3Engine · [FvpEngine] │
-├─ Capa 1: Nativo Android ────────────────────────────────┤
-│  Kotlin · ExoPlayer · SurfaceProducer · MethodChannel   │
-│  EventChannel · PiP · MediaSession                       │
-└─────────────────────────────────────────────────────────┘
+┌─ Layer 4: ready-made UI ──────────────────────────────────┐
+│  FPlayerView · touch controls · TV controls               │
+│  overlays replaceable through builders                    │
+├─ Layer 3: state ──────────────────────────────────────────┤
+│  FPlayerController (ChangeNotifier) · FPlayerValue        │
+│  playlist · tracks · storyboard · analytics               │
+├─ Layer 2: engine abstraction ─────────────────────────────┤
+│  FPlaybackEngine (interface) · Media3Engine · [FvpEngine] │
+├─ Layer 1: native Android ─────────────────────────────────┤
+│  Kotlin · ExoPlayer · SurfaceProducer · MethodChannel     │
+│  EventChannel · PiP · MediaSession                        │
+└───────────────────────────────────────────────────────────┘
 ```
 
-### Puntos técnicos de la capa nativa
+### Technical points of the native layer
 
-- **Render**: `TextureRegistry.SurfaceProducer` (API moderna de Flutter 3.22+, compatible con Impeller/Vulkan y con el manejo correcto de `onSurfaceDestroyed`/`onSurfaceAvailable` al ir a background). Se contempla un modo alterno `PlatformView + SurfaceView` para TV/4K/HDR y DRM secure, seleccionable por config (`FRenderMode.texture | .surface`).
-- **Multi-instancia**: un `ExoPlayer` por `playerId`, con `LoadControl` y `RenderersFactory` propios. Nada de singletons.
-- **Canales**: un `MethodChannel` global para crear/destruir + un `MethodChannel` y un `EventChannel` por instancia.
-- **Subtítulos**: las `Cue` de Media3 se serializan a Dart (texto + posición/línea/alineación/tamaño) y se renderizan con un widget Flutter. Así tienes control total de estilo, funciona igual en fullscreen y en TV, y no dependes de `SubtitleView` nativo. Se guarda la geometría de la cue para no romper posicionamiento de ASS/TTML.
-- **Decoders**: `DefaultRenderersFactory` con `EXTENSION_RENDERER_MODE_PREFER`/`OFF` según `FDecoderConfig.mode`, más un `MediaCodecSelector` custom para forzar software (`c2.android.*`) cuando se pide.
+- **Rendering**: `TextureRegistry.SurfaceProducer` (the modern Flutter 3.22+ API, compatible with Impeller/Vulkan and with correct handling of `onSurfaceDestroyed`/`onSurfaceAvailable` when going to background). An alternative `PlatformView + SurfaceView` mode is on the table for TV/4K/HDR and secure DRM, selectable by config (`FRenderMode.texture | .surface`).
+- **Multi-instance**: one `ExoPlayer` per `playerId`, each with its own `LoadControl` and `RenderersFactory`. No singletons.
+- **Channels**: one global `MethodChannel` to create/destroy, plus a `MethodChannel` and an `EventChannel` per instance.
+- **Subtitles**: Media3's `Cue` objects are serialised to Dart (text + position/line/alignment/size) and rendered with a Flutter widget. That gives full styling control, works the same in fullscreen and on TV, and does not depend on the native `SubtitleView`. The cue geometry is preserved so ASS/TTML positioning is not broken.
+- **Decoders**: `DefaultRenderersFactory` with `EXTENSION_RENDERER_MODE_PREFER`/`OFF` depending on `FDecoderConfig.mode`, plus a custom `MediaCodecSelector` to force software (`c2.android.*`) when asked.
 
-### Árbol de archivos objetivo
+### Target file tree
 
 ```
 lib/
-├── fplayer.dart                        # export único
+├── fplayer.dart                        # single export
 └── src/
     ├── core/
     │   ├── player_controller.dart       # FPlayerController
-    │   ├── player_value.dart            # estado inmutable
+    │   ├── player_value.dart            # immutable state
     │   ├── player_status.dart
-    │   ├── player_event.dart            # stream de eventos
+    │   ├── player_event.dart            # event stream
     │   └── playlist_controller.dart
     ├── engine/
-    │   ├── playback_engine.dart         # interfaz
+    │   ├── playback_engine.dart         # interface
     │   ├── media3/
     │   │   ├── media3_engine.dart
     │   │   ├── media3_channel.dart
     │   │   └── media3_mappers.dart
-    │   └── fvp/                         # fase 11
+    │   └── fvp/                         # phase 11
     ├── models/
     │   ├── source.dart                  # FPlayerSource, FSubtitleSource, FStoryboardSource
     │   ├── track.dart                   # FAudioTrack, FTextTrack, FVideoTrack
     │   ├── cue.dart
     │   ├── chapter.dart
-    │   └── error.dart                   # FPlayerError + taxonomía
+    │   └── error.dart                   # FPlayerError + taxonomy
     ├── config/
-    │   ├── player_config.dart           # agregador
+    │   ├── player_config.dart           # aggregator
     │   ├── playback_config.dart
     │   ├── buffer_config.dart
     │   ├── network_config.dart
@@ -110,27 +110,27 @@ lib/
     │   └── subtitle_style.dart
     ├── storyboard/
     │   ├── storyboard.dart
-    │   ├── vtt_parser.dart              # soporta #xywh y frames sueltos
-    │   ├── bif_parser.dart              # opcional
+    │   ├── vtt_parser.dart              # supports #xywh and standalone frames
+    │   ├── bif_parser.dart              # optional
     │   └── sprite_cache.dart
     ├── ui/
     │   ├── player_view.dart
-    │   ├── video_surface.dart           # solo textura, sin chrome
+    │   ├── video_surface.dart           # texture only, no chrome
     │   ├── fullscreen.dart
     │   ├── theme.dart
     │   ├── localizations.dart
-    │   ├── touch/                       # controles móvil
-    │   ├── tv/                          # controles D-pad
+    │   ├── touch/                       # mobile controls
+    │   ├── tv/                          # D-pad controls
     │   └── shared/                      # progress bar, subtitle layer, spinner, error
     ├── platform/
     │   ├── pip.dart
     │   ├── wakelock.dart
     │   ├── brightness.dart
-    │   └── device.dart                  # detección TV / leanback
+    │   └── device.dart                  # TV / leanback detection
     └── analytics/
-        ├── observer.dart                # FPlayerObserver (interfaz)
+        ├── observer.dart                # FPlayerObserver (interface)
         ├── metrics.dart
-        └── http_reporter.dart           # opcional, aparte
+        └── http_reporter.dart           # optional, separate
 
 android/src/main/kotlin/dev/chikenare/fplayer/
 ├── FplayerPlugin.kt
@@ -140,44 +140,44 @@ android/src/main/kotlin/dev/chikenare/fplayer/
 ├── DecoderFactory.kt
 ├── CueBridge.kt
 ├── PipController.kt
-├── SessionController.kt      # MediaSession + notificación
-└── AnalyticsBridge.kt        # AnalyticsListener → eventos
+├── SessionController.kt      # MediaSession + notification
+└── AnalyticsBridge.kt        # AnalyticsListener → events
 
-example/                      # app demo (móvil + TV)
+example/                      # demo app (mobile + TV)
 ```
 
 ---
 
-## 3. API pública (borrador para revisar)
+## 3. Public API (draft for review)
 
-### Fuente
+### Source
 
 ```dart
 final source = FPlayerSource.network(
   'https://cdn.example.com/master.m3u8',
   type: FSourceType.auto,          // auto | hls | dash | smooth | progressive
   headers: {'Authorization': 'Bearer $token'},
-  title: 'Episodio 4',
-  subtitle: 'Temporada 2',
+  title: 'Episode 4',
+  subtitle: 'Season 2',
   posterUrl: '...',
   startAt: Duration(minutes: 12),
   isLive: false,
   subtitles: [
     FSubtitleSource.network('https://.../es.vtt',
-      label: 'Español', language: 'es',
+      label: 'Spanish', language: 'es',
       headers: {...}, selectedByDefault: true),
   ],
   storyboard: FStoryboardSource.vtt('https://.../sb.vtt', headers: {...}),
   chapters: [...],
-  drm: FDrmConfig.widevine(licenseUrl: '...', headers: {...}),  // fase 11
-  metadata: {'contentId': 42, 'episodeId': 128},                // libre
+  drm: FDrmConfig.widevine(licenseUrl: '...', headers: {...}),  // phase 11
+  metadata: {'contentId': 42, 'episodeId': 128},                // free-form
 );
 
 FPlayerSource.file('/storage/emulated/0/video.mkv');
 FPlayerSource.asset('assets/intro.mp4');
 ```
 
-### Configuración — sub-configs en vez de un objeto de 60 parámetros
+### Configuration — sub-configs instead of a 60-parameter object
 
 ```dart
 const config = FPlayerConfig(
@@ -231,18 +231,18 @@ const config = FPlayerConfig(
     readTimeout: Duration(seconds: 8),
     loadingTimeout: Duration(seconds: 30),
     retry: FRetryPolicy(maxAttempts: 3, baseDelay: Duration(seconds: 2)),
-    userAgent: 'MiApp/1.0',
+    userAgent: 'MyApp/1.0',
   ),
   decoding: FDecoderConfig(
     mode: FDecoderMode.hardwareFirst,   // hardwareFirst | softwareFirst | hardwareOnly | softwareOnly
-    maxResolution: null,                 // cap para dispositivos flojos
+    maxResolution: null,                 // cap for weak devices
   ),
   subtitleStyle: FSubtitleStyle(...),
   wakelock: true,
 );
 ```
 
-`FPlayerConfig` y cada sub-config con `copyWith`, `const`-constructibles, y valores por defecto sensatos → el uso mínimo es `FPlayerConfig()`.
+`FPlayerConfig` and every sub-config get `copyWith`, are `const`-constructible, and carry sensible defaults → the minimum usage is `FPlayerConfig()`.
 
 ### Controller
 
@@ -250,11 +250,11 @@ const config = FPlayerConfig(
 final controller = FPlayerController(config: config);
 await controller.open(source);
 
-// estado (todo en value, además de getters de conveniencia)
+// state (everything in value, plus convenience getters)
 controller.value.status;        // idle loading ready buffering playing paused completed error
 controller.position / duration / buffered / progress / speed / volume / isMuted
 controller.videoSize / aspectRatio / isLive / seekableRange
-controller.error;               // FPlayerError? con code, message, isRetryable, cause
+controller.error;               // FPlayerError? with code, message, isRetryable, cause
 
 // control
 play() pause() togglePlayPause() stop() retry()
@@ -262,7 +262,7 @@ seek(Duration) seekBy(Duration) seekToLive()
 setSpeed(double) setVolume(double) toggleMute()
 setFit(FVideoFit) setZoom(double)
 
-// pistas
+// tracks
 controller.audioTracks / textTracks / videoTracks
 selectAudioTrack(FAudioTrack?) selectTextTrack(FTextTrack?) selectVideoTrack(FVideoTrack?)  // null = auto/off
 addSubtitle(FSubtitleSource) removeSubtitle(...)
@@ -272,28 +272,28 @@ setSubtitleOffset(Duration)
 setPlaylist(List<FPlayerSource>, startIndex: 0)
 next() previous() jumpTo(int)
 
-// pantalla
+// screen
 enterFullscreen() exitFullscreen() toggleFullscreen()
 enterPip() exitPip()
 controller.isPipSupported / isPipActive / isFullscreen
 
-// eventos (además de ChangeNotifier)
+// events (on top of ChangeNotifier)
 controller.events.listen((FPlayerEvent e) { ... });
 ```
 
 ### UI
 
 ```dart
-// todo incluido
+// everything included
 FPlayerView(controller: controller)
 
-// solo el video, tu chrome encima
+// just the video, your chrome on top
 FVideoSurface(controller: controller)
 
-// personalización quirúrgica sin forkear
+// surgical customisation without forking
 FPlayerView(
   controller: controller,
-  overlayBuilder: (ctx, ctrl) => MiOverlay(ctrl),
+  overlayBuilder: (ctx, ctrl) => MyOverlay(ctrl),
   topBarBuilder: ...,
   bottomBarBuilder: ...,
   settingsBuilder: ...,
@@ -305,108 +305,108 @@ FPlayerView(
 
 ---
 
-## 4. Roadmap por fases
+## 4. Phased roadmap
 
-Cada fase es entregable, compila, y tiene la app `example/` funcionando.
+Every phase is deliverable, compiles, and leaves the `example/` app working.
 
-| # | Fase | Entregable | Criterio de aceptación |
+| # | Phase | Deliverable | Acceptance criterion |
 |---|---|---|---|
-| ✅ **0** | Andamiaje | Convertir el paquete en plugin, `android/` Kotlin, `example/`, lints estrictos | `flutter analyze` limpio, example arranca |
-| ✅ **1** | Motor Media3 + puente | Reproducción de file/HLS/DASH/progresivo, headers, play/pause/seek/speed/volume, eventos de estado y posición | Los 4 tipos de fuente reproducen; headers verificados contra endpoint autenticado |
-| ✅ **2** | Pistas y subtítulos | Audio/subs/calidad del manifest, subs externos por URL con headers (SRT/VTT/ASS/TTML), cues a Dart y renderizado en Flutter, idiomas preferidos | Cambio de pista en caliente sin cortes; subs externos con auth |
-| ✅ **3** | UI base | `FPlayerView`, barra de progreso con buffered, gestos, tema, i18n, builders de personalización | Player usable de punta a punta en móvil |
-| ✅ **4** | Fullscreen y ciclo de vida | Fullscreen sin re-buffer (misma instancia), orientación, immersive, wakelock, audio focus, background/foreground | Rotar y entrar/salir de fullscreen no reinicia el video |
-| ✅ **5** | TV / D-pad | Detección leanback, focus ring, scrub acelerado con ←/→, teclas media, panel lateral de pistas, layout TV | Navegable 100% con control remoto en un Android TV real |
-| ✅ **6** | Storyboard | Parser VTT con `#xywh`, sprites, headers, caché, preview en el slider; fallback de extracción de frames para archivos locales | Miniatura fluida al arrastrar en un VOD con sprite sheet |
-| ✅ **7** | PiP + MediaSession | PiP con auto-enter, acciones en la ventana, MediaSession + notificación, audio en background, botones de auriculares | PiP funcional; controles en pantalla de bloqueo |
-| ✅ **8** | Robustez | Taxonomía de errores, retry con backoff, timeout de carga, manejo de live edge, caps de bitrate / modo ahorro de datos | Corte de red → reconecta solo; error fatal → overlay con reintento |
-| ✅ **9** | Playlist y capítulos | Cola, autoplay next, marcadores skip intro/outro, capítulos en la barra, tarjeta "siguiente episodio" | Serie completa reproduce en cadena |
-| ✅ **10** | Analytics | `FPlayerObserver` alimentado por `AnalyticsListener` de Media3 (startup, rebuffers, dropped frames, bytes, bitrate real), reporter HTTP opcional en paquete aparte | Métricas coinciden con la reproducción real |
-| ✅ **11** | Extras | ✅ descargas offline · ✅ motor `fvp` con caída por códec (paquete hermano) · ✅ Widevine DRM · descartados: Cast y screenshot | AV1 reproduce en un Android 10 |
+| ✅ **0** | Scaffolding | Turn the package into a plugin, `android/` Kotlin, `example/`, strict lints | `flutter analyze` clean, example starts |
+| ✅ **1** | Media3 engine + bridge | Playback of file/HLS/DASH/progressive, headers, play/pause/seek/speed/volume, state and position events | All 4 source types play; headers verified against an authenticated endpoint |
+| ✅ **2** | Tracks and subtitles | Audio/subs/quality from the manifest, external subs by URL with headers (SRT/VTT/ASS/TTML), cues to Dart and rendered in Flutter, preferred languages | Hot track switching with no stutter; external subs with auth |
+| ✅ **3** | Base UI | `FPlayerView`, progress bar with buffered range, gestures, theme, i18n, customisation builders | Player usable end to end on mobile |
+| ✅ **4** | Fullscreen and lifecycle | Fullscreen with no re-buffer (same instance), orientation, immersive, wakelock, audio focus, background/foreground | Rotating and entering/leaving fullscreen does not restart the video |
+| ✅ **5** | TV / D-pad | Leanback detection, focus ring, accelerated scrubbing with ←/→, media keys, side track panel, TV layout | 100% navigable with a remote on a real Android TV |
+| ✅ **6** | Storyboard | VTT parser with `#xywh`, sprites, headers, cache, preview on the slider; frame-extraction fallback for local files | Smooth thumbnail while dragging on a VOD with a sprite sheet |
+| ✅ **7** | PiP + MediaSession | PiP with auto-enter, in-window actions, MediaSession + notification, background audio, headset buttons | PiP works; controls on the lock screen |
+| ✅ **8** | Robustness | Error taxonomy, retry with backoff, load timeout, live-edge handling, bitrate caps / data-saver mode | Network drop → reconnects on its own; fatal error → overlay with retry |
+| ✅ **9** | Playlist and chapters | Queue, autoplay next, skip intro/outro markers, chapters on the bar, "next episode" card | A whole series plays back to back |
+| ✅ **10** | Analytics | `FPlayerObserver` fed by Media3's `AnalyticsListener` (startup, rebuffers, dropped frames, bytes, real bitrate), optional HTTP reporter in a separate package | Metrics match actual playback |
+| ✅ **11** | Extras | ✅ offline downloads · ✅ `fvp` engine with codec fallback (sibling package) · ✅ Widevine DRM · dropped: Cast and screenshot | AV1 plays on an Android 10 |
 
 ---
 
-## 5. Decisiones
+## 5. Decisions
 
-### Cerradas
+### Settled
 
-| Tema | Decisión |
+| Topic | Decision |
 |---|---|
-| Motor | Plugin nativo propio sobre Media3/ExoPlayer 1.11.0. `fvp` queda como motor opcional en fase 11 |
-| DRM | No requerido. Se dejan los ganchos `FDrmConfig` en la API desde la fase 1, sin implementación |
-| Telemetría | Fuera del core. `fplayer` expone solo la interfaz `FPlayerObserver`; el reporter con cola persistente y cliente HTTP vive en `fplayer_telemetry` (paquete hermano) |
-| Render | Arrancar con `SurfaceProducer` (textura). Evaluar `PlatformView + SurfaceView` en fase 5 si en TV real hay caídas de frames en 4K |
-| Subtítulos | Cues serializadas a Dart y renderizadas en Flutter, conservando geometría de la cue |
-| Package id nativo | `dev.chikenare.fplayer` |
+| Engine | Our own native plugin on Media3/ExoPlayer 1.11.0. `fvp` stays as an optional engine in phase 11 |
+| DRM | Not required. The `FDrmConfig` hooks stay in the API from phase 1, with no implementation |
+| Telemetry | Out of the core. `fplayer` exposes only the `FPlayerObserver` interface; the reporter with its persistent queue and HTTP client lives in `fplayer_telemetry` (sibling package) |
+| Rendering | Start with `SurfaceProducer` (texture). Evaluate `PlatformView + SurfaceView` in phase 5 if a real TV drops frames at 4K |
+| Subtitles | Cues serialised to Dart and rendered in Flutter, preserving cue geometry |
+| Native package id | `dev.chikenare.fplayer` |
 
-### Pendientes de revisar contigo
+### Open questions for you
 
-1. **Convención de nombres**: propongo `FPlayer*` para las clases públicas grandes (`FPlayerController`, `FPlayerView`, `FPlayerConfig`) y `F*` para modelos y enums (`FPlayerSource`, `FAudioTrack`, `FVideoFit`).
-2. **Ajuste de sincronía de subtítulos** (`setSubtitleOffset`), sacado de la fase 2. No hay ruta limpia sobre Media3: `TextRenderer` es `final`, así que no se puede desplazar el reloj que ve el renderizador, y hacerlo en Dart solo permitiría retrasar (una cue adelantada tendría que mostrarse antes de que el motor la emita). Las dos salidas reales:
-   - **Descargar y parsear los subtítulos externos en Dart** en vez de delegarlos a Media3. Da desplazamiento en ambos sentidos, estilo por cue y cero ida y vuelta por el canal, a cambio de escribir parsers de SRT/VTT/ASS y de una segunda ruta de código junto a las pistas embebidas.
-   - **Envolver `SubtitleParser` en nativo** y desplazar los tiempos al parsear. Sirve para ambos sentidos y es poco código, pero el desplazamiento se fija al cargar: cambiarlo en caliente obliga a recargar la fuente.
+1. **Naming convention**: I propose `FPlayer*` for the big public classes (`FPlayerController`, `FPlayerView`, `FPlayerConfig`) and `F*` for models and enums (`FPlayerSource`, `FAudioTrack`, `FVideoFit`).
+2. **Subtitle timing offset** (`setSubtitleOffset`), pulled out of phase 2. There is no clean route on Media3: `TextRenderer` is `final`, so you cannot shift the clock the renderer sees, and doing it in Dart would only allow delaying (a cue that runs early would have to be shown before the engine emits it). The two real ways out:
+   - **Download and parse external subtitles in Dart** instead of delegating them to Media3. That gives shifting in both directions, per-cue styling and zero round trips over the channel, in exchange for writing SRT/VTT/ASS parsers and a second code path alongside the embedded tracks.
+   - **Wrap `SubtitleParser` natively** and shift the timings at parse time. Works in both directions and is little code, but the offset is fixed at load: changing it live forces a source reload.
 
-   Mi recomendación es la segunda si el ajuste es algo que se configura una vez, y la primera si quieres un control deslizante de sincronía en vivo. Decidilo cuando lleguemos a la fase 8.
+   My recommendation is the second one if the adjustment is something you configure once, and the first if you want a live sync slider. Decide it when we reach phase 8.
 
 ---
 
-## 6. Bitácora de implementación
+## 6. Implementation log
 
-Hallazgos que costaron tiempo y conviene no volver a descubrir.
+Findings that cost time and are worth not rediscovering.
 
-### Fase 1
+### Phase 1
 
-- **`SurfaceProducer.setSize()` es obligatorio.** El plugin oficial `video_player_android` nunca lo llama y funciona en su ruta, pero en el backend de ImageReader (Impeller/Vulkan, Android 15) el buffer conserva el tamaño con el que se creó — el del widget. Los frames de 1280×720 aterrizaban en la esquina superior izquierda de un buffer de 1344×756 y se recortaba ~5 % por derecha e inferior. La corrección: redimensionar la textura al tamaño decodificado en `onVideoSizeChanged` y **volver a asignar el Surface**, porque `setSize` puede devolver uno nuevo. Ver `PlayerHost.resizeSurface`.
-- **Orden de eventos en un error fatal.** ExoPlayer pasa a `STATE_IDLE` *y luego* reporta el error. Emitir ambos hacía que Dart mostrara "sin media" durante un frame antes del overlay de error. Se omite el `idle` cuando `player.playerError != null`.
-- **Duración en el arranque.** `initialized` no se puede emitir en cuanto el estado es `READY`: la duración puede seguir siendo `TIME_UNSET`. Se espera a que haya duración válida, salvo en directo donde nunca la habrá.
-- **URLs de prueba.** El bucket `gtv-videos-bucket` de Google (el clásico *ForBiggerBlazes*, *ElephantsDream*) dejó de ser público y devuelve 403. El example usa `media.w3.org`, `shaka-demo-assets` y `demo.unified-streaming.com`.
+- **`SurfaceProducer.setSize()` is mandatory.** The official `video_player_android` plugin never calls it and works on its path, but on the ImageReader backend (Impeller/Vulkan, Android 15) the buffer keeps the size it was created with — the widget's. Frames of 1280×720 landed in the top-left corner of a 1344×756 buffer and got clipped by ~5% on the right and bottom. The fix: resize the texture to the decoded size in `onVideoSizeChanged` and **reassign the Surface**, because `setSize` can hand back a new one. See `PlayerHost.resizeSurface`.
+- **Event order on a fatal error.** ExoPlayer moves to `STATE_IDLE` *and then* reports the error. Emitting both made Dart show "no media" for a frame before the error overlay. The `idle` is skipped when `player.playerError != null`.
+- **Duration at startup.** `initialized` cannot be emitted as soon as the state is `READY`: the duration can still be `TIME_UNSET`. We wait for a valid duration, except on live where there will never be one.
+- **Test URLs.** Google's `gtv-videos-bucket` (the classic *ForBiggerBlazes*, *ElephantsDream*) stopped being public and returns 403. The example uses `media.w3.org`, `shaka-demo-assets` and `demo.unified-streaming.com`.
 
-### Fase 2
+### Phase 2
 
-- **Seleccionada ≠ activa.** En selección adaptativa ExoPlayer marca como *seleccionadas* **todas** las calidades del pool, no solo la que se decodifica. Tomar la primera daba siempre la más baja: el chip mostraba "Auto (240p)" mientras se veía 720×576. La API ahora distingue `isSelected` (está en la selección) de `isActive` (se está decodificando), y `FTracks` expone `activeVideo` frente a `selectedVideo` (la fijada por el usuario, null en auto). Cuando el grupo tiene una sola pista seleccionada no hace falta comparar formatos — eso solo importa dentro de un grupo adaptativo, y esos siempre vienen de un manifiesto con ids.
-- **Los switches adaptativos no disparan `onTracksChanged`.** La lista de pistas no cambia, solo el peldaño elegido. Hace falta un `AnalyticsListener.onDownstreamFormatChanged`, con deduplicado por firma de formatos activos para no reenviar la lista entera en cada evento.
-- **Los parsers rellenan los valores por defecto del formato.** Una cue WebVTT sin posicionamiento llega con `position: 0.5, size: 1.0` y `line:-1`, no con campos vacíos. Detectar "sin preferencia" con un simple null routeaba los subtítulos normales por la ruta de posicionamiento absoluto, anclados arriba y desbordando por abajo.
-- **`line` negativo ancla el borde inferior.** `line:-1` significa "la última fila": la caja crece hacia arriba. Tratarlo como offset desde arriba empuja las cues de dos líneas fuera del cuadro.
-- **Un `Stack` con ajuste laxo anula `textAlign`.** El contorno del texto se pinta como una segunda copia dentro de un `Stack`; con el ajuste por defecto el Stack encoge al ancho intrínseco del texto y se pega a la izquierda de la caja. Necesita `StackFit.passthrough`.
-- **Headers por URI, no globales.** Poner los headers del media como *default request properties* del `DefaultHttpDataSource` los enviaría también a un subtítulo alojado en otro dominio — filtrando el `Authorization` a un tercero. La solución es un `ResolvingDataSource` que inyecta el conjunto correcto según la URI. Verificado en el servidor de pruebas: la petición al VTT lleva solo sus propios headers.
-- **`TextRenderer` es `final`.** No se puede subclasear para desplazar la línea de tiempo de los subtítulos, y el ajuste de sincronía en caliente no tiene ruta limpia sobre Media3 (ver "Pendientes").
-- **`und` es un idioma.** Los muxers escriben `und` cuando nadie etiquetó la pista; mostrarlo en un selector es peor que no mostrar nada. Se normaliza a null y cae al nombre genérico numerado.
+- **Selected ≠ active.** Under adaptive selection ExoPlayer marks **all** the qualities in the pool as *selected*, not just the one being decoded. Taking the first always gave the lowest: the chip read "Auto (240p)" while 720×576 was on screen. The API now distinguishes `isSelected` (it is in the selection) from `isActive` (it is being decoded), and `FTracks` exposes `activeVideo` against `selectedVideo` (the one pinned by the user, null on auto). When a group has a single selected track there is no need to compare formats — that only matters inside an adaptive group, and those always come from a manifest with ids.
+- **Adaptive switches do not fire `onTracksChanged`.** The track list does not change, only the chosen rung. You need an `AnalyticsListener.onDownstreamFormatChanged`, deduplicated by a signature of the active formats so the whole list is not resent on every event.
+- **Parsers fill in the format's default values.** A WebVTT cue with no positioning arrives with `position: 0.5, size: 1.0` and `line:-1`, not with empty fields. Detecting "no preference" with a plain null check routed ordinary subtitles down the absolute-positioning path, anchored at the top and overflowing at the bottom.
+- **A negative `line` anchors the bottom edge.** `line:-1` means "the last row": the box grows upwards. Treating it as an offset from the top pushes two-line cues out of the frame.
+- **A `Stack` with loose fit defeats `textAlign`.** The text outline is painted as a second copy inside a `Stack`; with the default fit the Stack shrinks to the text's intrinsic width and sticks to the left of the box. It needs `StackFit.passthrough`.
+- **Headers per URI, not global.** Setting the media's headers as *default request properties* on `DefaultHttpDataSource` would also send them to a subtitle hosted on another domain — leaking the `Authorization` to a third party. The fix is a `ResolvingDataSource` that injects the right set based on the URI. Verified against the test server: the VTT request carries only its own headers.
+- **`TextRenderer` is `final`.** It cannot be subclassed to shift the subtitle timeline, and live sync adjustment has no clean route on Media3 (see "Open questions").
+- **`und` is a language.** Muxers write `und` when nobody tagged the track; showing it in a picker is worse than showing nothing. It is normalised to null and falls back to the generic numbered name.
 
-### Fases 3–10
+### Phases 3–10
 
-- **`Shortcuts` gana al `Focus` de arriba.** Los eventos de teclado suben desde el nodo con foco hacia la raíz, así que un `Shortcuts` *más cercano* al botón enfocado ve la flecha antes que un `Focus` ancestro. La lógica de "la primera pulsación solo revela los controles" estaba en el ancestro y nunca se ejecutaba para ←/→. Todo lo que implica una pulsación direccional tiene que vivir en la acción del `Shortcuts`.
-- **La aceleración del D-pad no puede resetearse en el key-up.** `sendKeyEvent` (y un mando real pulsando repetido) emite down+up por pulsación, así que el contador volvía a cero entre pulsaciones y solo aceleraba manteniendo. Ahora lo resetea el temporizador de commit: una ráfaga de pulsaciones sueltas acelera igual que una tecla mantenida, que es como se usa un mando de verdad.
-- **Un `Stack` con ajuste laxo anula `textAlign`** (ya visto en subtítulos, reaparece en cualquier composición de dos copias de un `Text`).
-- **El botón de play ocupa el centro exacto del player.** Los gestos sobre el centro solo llegan a la capa de gestos con los controles ocultos — que es justamente cuando se usan. Los tests lo destaparon al fallar sobre el widget equivocado.
-- **Timers vivos al desmontar.** El timeout de carga (30 s) y el auto-ocultar de controles sobreviven al árbol de widgets y hacen fallar cualquier test que no los deje expirar. No es un bug de producto, pero obliga a que los tests desarmen esos temporizadores o los dejen vencer.
-- **Ocultar la miniatura hasta que carga el índice reintroduce el parpadeo** que `FStoryboardPreview` fue diseñado para evitar: el widget ya dibuja su propio placeholder. La integración no debe filtrar por `hasFrames`.
-- **La altura del player depende de la forma del video.** Obvio en retrospectiva, pero costó tres intentos de verificación en emulador: las coordenadas de la barra de progreso cambian entre un video 5:4 y uno 16:9.
-- **Inferir un seek de los saltos de posición es aproximado.** Se cambió por un evento `FSeeked` real emitido por el controller: una corrección de un segundo era indistinguible de la deriva del reloj.
-- **La ventana de PiP no pinta frames de Flutter de forma fiable en emulador.** El sistema hace todo bien (`mode=pinned`, aspecto correcto, reproducción avanzando) pero la ventana sale en blanco — incluso con un color sólido detrás del video, así que no es la textura. Una de cada seis ejecuciones sí pinta. Queda por verificar en hardware físico antes de considerar el modo `PlatformView + SurfaceView`.
+- **`Shortcuts` beats the `Focus` above it.** Key events bubble from the focused node towards the root, so a `Shortcuts` *closer* to the focused button sees the arrow before an ancestor `Focus` does. The "the first press only reveals the controls" logic lived in the ancestor and never ran for ←/→. Everything a directional press implies has to live in the `Shortcuts` action.
+- **D-pad acceleration cannot reset on key-up.** `sendKeyEvent` (and a real remote pressed repeatedly) emits down+up per press, so the counter went back to zero between presses and only accelerated while held. Now the commit timer resets it: a burst of separate presses accelerates just like a held key, which is how a remote is actually used.
+- **A `Stack` with loose fit defeats `textAlign`** (already seen with subtitles, it reappears in any composition of two copies of a `Text`).
+- **The play button sits at the exact centre of the player.** Gestures over the centre only reach the gesture layer with the controls hidden — which is exactly when they are used. The tests exposed it by failing against the wrong widget.
+- **Timers alive at unmount.** The load timeout (30 s) and the controls auto-hide outlive the widget tree and fail any test that does not let them expire. Not a product bug, but it forces tests to disarm those timers or let them run out.
+- **Hiding the thumbnail until the index loads reintroduces the flicker** `FStoryboardPreview` was designed to avoid: the widget already draws its own placeholder. The integration must not filter on `hasFrames`.
+- **The player's height depends on the video's shape.** Obvious in hindsight, but it cost three verification attempts on the emulator: the progress bar's coordinates change between a 5:4 video and a 16:9 one.
+- **Inferring a seek from position jumps is approximate.** It was replaced with a real `FSeeked` event emitted by the controller: a one-second correction was indistinguishable from clock drift.
+- **The PiP window does not reliably paint Flutter frames on the emulator.** The system does everything right (`mode=pinned`, correct aspect ratio, playback advancing) but the window comes up blank — even with a solid colour behind the video, so it is not the texture. One run in six does paint. It remains to be verified on physical hardware before considering the `PlatformView + SurfaceView` mode.
 
-### Fase 9 y descargas
+### Phase 9 and downloads
 
-- **`previous` no significa "ítem anterior".** Pasados unos segundos significa "vuelve al principio de esto", que es lo que hace ese botón en todas partes. Saltar siempre al anterior resulta hostil cuando alguien solo quiere reiniciar lo que está viendo.
-- **`open()` limpia la cola, `stop()` no.** Abrir una fuente suelta significa "reproduce esta cosa"; parar significa descargar el medio pero conservar la cola, para que `jumpTo` siga funcionando después. Una lista vacía en `setPlaylist` es el único caso que significa "no hay cola".
-- **Auto-avanzar *después* de emitir `FCompleted`**, para que un oyente que quiera hacer algo al terminar todavía vea el ítem que acabó y no el que lo reemplaza.
-- **Un stream adaptativo descargado sigue anunciando calidades que no están en disco.** El manifiesto lista las cinco renditions aunque solo se bajara una; sin red, el selector adaptativo alcanza una que no existe y el stream muere. La solución correcta es construir el `MediaSource` desde el `DownloadRequest`, que lleva las stream keys realmente descargadas. MP4 progresivo no tiene este problema.
-- **La caché de descargas se abre en solo lectura para reproducir.** Si no, el streaming normal iría llenando el directorio de descargas con contenido que el usuario nunca pidió guardar, y el evictor no-op no lo soltaría nunca.
-- **Los headers persisten en el índice de descargas** para que una descarga reanudada tras un reinicio pueda re-autenticarse. Eso deja un token en disco: usa tokens de vida corta.
-- **Un frame de ancho impar rompe MediaCodec.** El trailer de bunny en w3.org es 853×480 y el decodificador del emulador falla al configurarse aunque reporte `format_supported=YES`. La taxonomía de errores lo clasificó bien igualmente ("este dispositivo no puede reproducir este video"), pero conviene saberlo al elegir contenido de prueba.
-- **Sin un `DownloadService` declarado, nadie arranca la cola.** Ese servicio es quien normalmente llama a `resumeDownloads()` al crearse; sin él una descarga encolada se queda en `queued` para siempre. El caso solo aparece en dispositivo, no en tests.
-- **`DownloadHelper` no describe media progresiva.** Preguntarle por períodos para un MP4 suelto lanza `IllegalStateException` **sin mensaje**, que llega a Dart como `PlatformException(create_failed, null)`. Dos lecciones: guardar el caso progresivo (no hay renditions que elegir, se baja entero) y no dejar nunca que un mensaje nulo cruce el puente.
-- **`fvp` cuesta 11,58 MB por ABI** — 30,4 MB con tres — frente a 1-2 MB de todo Media3, y lo pagan también las apps que nunca lo usen: Gradle empaqueta las `.so` por estar el plugin en el grafo de dependencias, y el tree-shaking de Dart no las toca. Por eso vive en `fplayer_fvp` y no en el paquete base. Confirmado midiendo el APK con y sin él.
-- **`fvp` 0.34 no compila con Flutter 3.47**: su `build.gradle` hace `assert` sobre el archivo `version` de la raíz del SDK, que Flutter ya no genera. Arreglado en 0.38. Es justo el tipo de acoplamiento que no quieres en el paquete base.
-- **No existe forzado de L3 en `MediaItem.DrmConfiguration`.** Inventé una opción `forceL3` y la mapeé a un método que hace otra cosa; `javap` sobre el artefacto real lo destapó. Verificar la API antes de exponerla, y borrar la opción antes que implementarla mal.
-- **Un flag de ventana compartido necesita conteo de referencias.** Con varios players, un booleano deja que el que pausa apague la pantalla debajo del que reproduce.
-- **Dos agentes editando el mismo archivo se pisan.** El agente de red tocó `player_controller.dart` fuera de su ámbito mientras yo lo modificaba, y acabamos con dos manejadores del mismo evento y una referencia a un campo eliminado. Los límites de archivos entre frentes paralelos hay que respetarlos, y conviene fusionar a mano en vez de descartar: su aportación —no gastar reintentos mientras no hay red— era la buena.
+- **`previous` does not mean "previous item".** A few seconds in it means "go back to the start of this one", which is what that button does everywhere. Always jumping to the previous one feels hostile when someone just wants to restart what they are watching.
+- **`open()` clears the queue, `stop()` does not.** Opening a standalone source means "play this thing"; stopping means unloading the media but keeping the queue, so that `jumpTo` still works afterwards. An empty list in `setPlaylist` is the only case that means "there is no queue".
+- **Auto-advance *after* emitting `FCompleted`**, so a listener that wants to do something on finish still sees the item that ended and not the one replacing it.
+- **A downloaded adaptive stream still advertises qualities that are not on disk.** The manifest lists all five renditions even if only one was downloaded; with no network, the adaptive selector reaches for one that does not exist and the stream dies. The right fix is building the `MediaSource` from the `DownloadRequest`, which carries the stream keys that were actually downloaded. Progressive MP4 does not have this problem.
+- **The download cache is opened read-only for playback.** Otherwise ordinary streaming would keep filling the downloads directory with content the user never asked to keep, and the no-op evictor would never release it.
+- **Headers persist in the download index** so that a download resumed after a reboot can re-authenticate. That leaves a token on disk: use short-lived tokens.
+- **An odd-width frame breaks MediaCodec.** The bunny trailer on w3.org is 853×480 and the emulator's decoder fails to configure even though it reports `format_supported=YES`. The error taxonomy still classified it correctly ("this device cannot play this video"), but it is worth knowing when picking test content.
+- **With no `DownloadService` declared, nobody starts the queue.** That service is what normally calls `resumeDownloads()` when it is created; without it, an enqueued download stays `queued` forever. The case only shows up on device, not in tests.
+- **`DownloadHelper` does not describe progressive media.** Asking it about periods for a standalone MP4 throws `IllegalStateException` **with no message**, which reaches Dart as `PlatformException(create_failed, null)`. Two lessons: guard the progressive case (there are no renditions to choose, it is downloaded whole) and never let a null message cross the bridge.
+- **`fvp` costs 11.58 MB per ABI** — 30.4 MB with three — against 1-2 MB for all of Media3, and apps that never use it pay too: Gradle packages the `.so` files because the plugin is in the dependency graph, and Dart's tree-shaking does not touch them. That is why it lives in `fplayer_fvp` and not in the base package. Confirmed by measuring the APK with and without it.
+- **`fvp` 0.34 does not build with Flutter 3.47**: its `build.gradle` asserts on the `version` file at the SDK root, which Flutter no longer generates. Fixed in 0.38. It is exactly the kind of coupling you do not want in the base package.
+- **There is no L3 forcing in `MediaItem.DrmConfiguration`.** I invented a `forceL3` option and mapped it to a method that does something else; `javap` on the real artifact exposed it. Verify the API before exposing it, and delete the option rather than implement it wrong.
+- **A shared window flag needs reference counting.** With several players, a boolean lets the one that pauses turn off the screen underneath the one that is playing.
+- **Two agents editing the same file step on each other.** The network agent touched `player_controller.dart` outside its scope while I was modifying it, and we ended up with two handlers for the same event and a reference to a deleted field. File boundaries between parallel workstreams have to be respected, and it is better to merge by hand than to discard: its contribution — not spending retries while there is no network — was the right one.
 
-## 7. Riesgos
+## 7. Risks
 
-| Riesgo | Mitigación |
+| Risk | Mitigation |
 |---|---|
-| AV1 por software en Android < 12 | Motor fvp opcional (fase 11) o compilar `media3-decoder-av1` con NDK |
-| `SurfaceProducer` y ciclo de vida en background | Manejar `onSurfaceCleanup`/`onSurfaceAvailable`; probar en Android 14/15 |
-| PiP con render por textura muestra toda la Activity | Modo PiP oculta el chrome y fuerza `fit: cover`; contemplado en `FPipConfig` |
-| Fragmentación de fabricantes en decodificadores | `MediaCodecSelector` con lista de exclusión + fallback automático a software |
-| Alcance grande | Fases independientes y entregables; se puede parar en la 8 y ya es un player completo |
+| Software AV1 on Android < 12 | Optional fvp engine (phase 11) or build `media3-decoder-av1` with the NDK |
+| `SurfaceProducer` and the background lifecycle | Handle `onSurfaceCleanup`/`onSurfaceAvailable`; test on Android 14/15 |
+| PiP with texture rendering shows the whole Activity | PiP mode hides the chrome and forces `fit: cover`; covered in `FPipConfig` |
+| Manufacturer fragmentation in decoders | `MediaCodecSelector` with an exclusion list + automatic fallback to software |
+| Large scope | Independent, deliverable phases; you can stop at 8 and already have a complete player |

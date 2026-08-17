@@ -23,14 +23,14 @@ const _catalogue = <FPlayerSource>[
   FPlayerSource.network(
     'https://media.w3.org/2010/05/sintel/trailer.mp4',
     title: 'Sintel',
-    subtitle: 'MP4 progresivo',
+    subtitle: 'Progressive MP4',
   ),
   FPlayerSource.network(
     'https://devstreaming-cdn.apple.com/videos/streaming/examples/'
     'bipbop_16x9/bipbop_16x9_variant.m3u8',
     type: FSourceType.hls,
     title: 'BipBop',
-    subtitle: 'HLS · 30 minutos',
+    subtitle: 'HLS · 30 minutes',
   ),
 ];
 
@@ -55,14 +55,14 @@ class _DownloadsDemoPageState extends State<DownloadsDemoPage> {
     await _downloads.initialize(
       const FDownloadConfig(
         maxParallelDownloads: 2,
-        notification: FDownloadNotificationConfig(channelName: 'Descargas'),
+        notification: FDownloadNotificationConfig(channelName: 'Downloads'),
       ),
     );
     if (mounted) setState(() {});
   }
 
   Future<void> _enqueue(FPlayerSource source) async {
-    setState(() => _status = 'Leyendo el manifiesto de ${source.title}…');
+    setState(() => _status = 'Reading the manifest for ${source.title}…');
     try {
       final options = await _downloads.inspect(source);
       await _downloads.enqueue(
@@ -71,16 +71,16 @@ class _DownloadsDemoPageState extends State<DownloadsDemoPage> {
       );
       if (mounted) setState(() => _status = _describe(source, options));
     } on Exception catch (e) {
-      if (mounted) setState(() => _status = 'Falló: $e');
+      if (mounted) setState(() => _status = 'Failed: $e');
     }
   }
 
   String _describe(FPlayerSource source, FDownloadOptions options) {
     final best = options.video.isEmpty ? null : options.video.last;
     final size = best?.estimatedBytes;
-    return '${source.title}: ${options.video.length} calidades, '
-        '${options.audio.length} audios'
-        '${size == null ? '' : ' · máx ~${_megabytes(size)}'}';
+    return '${source.title}: ${options.video.length} qualities, '
+        '${options.audio.length} audio tracks'
+        '${size == null ? '' : ' · up to ~${_megabytes(size)}'}';
   }
 
   Future<void> _play(FDownloadItem item) async {
@@ -96,7 +96,7 @@ class _DownloadsDemoPageState extends State<DownloadsDemoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Descargas')),
+      appBar: AppBar(title: const Text('Downloads')),
       body: ListenableBuilder(
         listenable: _downloads,
         builder: (context, _) {
@@ -107,13 +107,8 @@ class _DownloadsDemoPageState extends State<DownloadsDemoPage> {
           return ListView(
             children: [
               if (_player != null)
-                FPlayerView(
-                  controller: _player!,
-                  config: const FUiConfig(
-                    localizations: FPlayerLocalizations.spanish(),
-                  ),
-                ),
-              const _Heading('Catálogo'),
+                FPlayerView(controller: _player!),
+              const _Heading('Catalogue'),
               for (final source in _catalogue)
                 ListTile(
                   dense: true,
@@ -187,15 +182,15 @@ class _QueueHeading extends StatelessWidget {
           Expanded(
             child: Text(
               active == 0
-                  ? 'Cola · ${downloads.items.length} · ${_megabytes(downloads.bytesOnDisk)} en disco'
-                  : 'Cola · $active activas · '
+                  ? 'Queue · ${downloads.items.length} · ${_megabytes(downloads.bytesOnDisk)} on disk'
+                  : 'Queue · $active active · '
                       '${(downloads.overallProgress * 100).round()}%',
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
-          TextButton(onPressed: downloads.pauseAll, child: const Text('Pausar')),
-          TextButton(onPressed: downloads.resumeAll, child: const Text('Seguir')),
-          TextButton(onPressed: downloads.removeAll, child: const Text('Borrar')),
+          TextButton(onPressed: downloads.pauseAll, child: const Text('Pause')),
+          TextButton(onPressed: downloads.resumeAll, child: const Text('Resume')),
+          TextButton(onPressed: downloads.removeAll, child: const Text('Delete')),
         ],
       ),
     );

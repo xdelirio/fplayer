@@ -1,57 +1,57 @@
 # fplayer
 
-Reproductor de video para Flutter construido sobre **Media3/ExoPlayer**, pensado para compartirse entre varias apps.
+A Flutter video player built on **Media3/ExoPlayer**, meant to be shared across several apps.
 
-> **[Guía de integración](docs/integracion.html)** — cómo meterlo en una app: instalación, qué pedir al manifiesto según las funciones que uses, recetas y los detalles que muerden.
+> **[Integration guide](docs/integration.html)** — how to drop it into an app: installation, what the manifest needs depending on the features you use, recipes, and the details that bite.
 
-> **Estado:** roadmap completo y verificado en dispositivo. El recorrido y las decisiones están en [`docs/PLAN.md`](docs/PLAN.md).
+> **Status:** roadmap complete and verified on device. The route taken and the decisions behind it are in [`docs/PLAN.md`](docs/PLAN.md).
 
-## Qué hace hoy
+## What it does today
 
-- Archivos locales, assets, HTTP progresivo, **HLS y DASH con bitrate adaptativo real**
-- Headers HTTP personalizados por fuente, aplicados también a segmentos y peticiones de rango
-- **Pistas de audio, subtítulos y calidad** del manifiesto, con selección en caliente
-- **Subtítulos externos por URL** (SRT, VTT, ASS/SSA, TTML) con headers propios, renderizados en Flutter
-- Idiomas preferidos para selección automática
-- Decodificación por hardware por defecto, con modos software configurables
-- Reanudar en una posición (`startAt`)
-- Estado observable vía `ChangeNotifier` + un stream de eventos discretos
-- Taxonomía de errores accionable (`unauthorized`, `notFound`, `unsupportedFormat`, …) con reintento automático y backoff exponencial
-- **UI completa** (`FPlayerView`) con controles, gestos, panel de ajustes, fullscreen y estados de error — reemplazable pieza a pieza
-- **Control remoto / Android TV** con scrub acelerado y navegación por foco
-- **Storyboard**: miniaturas en el slider desde un índice WebVTT con sprite sheets
-- **Capítulos** en la barra y botón de saltar intro / créditos
-- **Picture-in-Picture**, **MediaSession** (notificación, pantalla de bloqueo, auriculares) y **audio en background**
-- **Cola de reproducción** con auto-avance y tarjeta de "a continuación"
-- **Descargas offline** con cola persistente, requisitos de red y reproducción desde caché
-- **Analítica** de sesión: tiempo visto real, arranque, rebuffers, cambios de calidad
-- Capas sueltas (`FVideoSurface`, `FSubtitleView`, `FProgressBar`) para montar tu propia UI
+- Local files, assets, progressive HTTP, **HLS and DASH with real adaptive bitrate**
+- Custom HTTP headers per source, applied to segments and range requests too
+- **Audio, subtitle and quality tracks** from the manifest, selectable at runtime
+- **External subtitles by URL** (SRT, VTT, ASS/SSA, TTML) with their own headers, rendered in Flutter
+- Preferred languages for automatic selection
+- Hardware decoding by default, with configurable software modes
+- Resume at a position (`startAt`)
+- Observable state through a `ChangeNotifier` plus a stream of discrete events
+- An actionable error taxonomy (`unauthorized`, `notFound`, `unsupportedFormat`, …) with automatic retry and exponential backoff
+- **A complete UI** (`FPlayerView`) with controls, gestures, a settings panel, fullscreen and error states — replaceable piece by piece
+- **Remote control / Android TV** with accelerated scrubbing and focus navigation
+- **Storyboard**: thumbnails on the seek bar from a WebVTT index with sprite sheets
+- **Chapters** on the bar and a skip intro / credits button
+- **Picture-in-Picture**, **MediaSession** (notification, lock screen, headset) and **background audio**
+- **A playback queue** with auto-advance and an "up next" card
+- **Offline downloads** with a persistent queue, network requirements and playback from cache
+- **Session analytics**: real watched time, startup, rebuffers, quality changes
+- Loose layers (`FVideoSurface`, `FSubtitleView`, `FProgressBar`) for building your own UI
 
-Fuera del paquete base: el motor `fvp` para AV1 en Android antiguo vive en `fplayer_fvp`, porque pesa 11,5 MB por ABI. Cast no está implementado.
+Outside the base package: the `fvp` engine for AV1 on older Android lives in `fplayer_fvp`, because it weighs 11.5 MB per ABI. Cast is not implemented.
 
-## Requisitos
+## Requirements
 
 | | |
 |---|---|
 | Flutter | 3.44+ |
 | Android | minSdk 24, compileSdk 36 |
-| Plataformas | Android (por ahora) |
+| Platforms | Android (for now) |
 
-## Uso
+## Usage
 
-Con la UI incluida:
+With the bundled UI:
 
 ```dart
 final controller = FPlayerController(config: const FPlayerConfig());
 await controller.open(FPlayerSource.network(url));
 
-// en build:
+// in build:
 FPlayerView(controller: controller)
 ```
 
-`FPlayerView` se dimensiona al aspecto del video, así que entra en una `Column` sin envolturas.
+`FPlayerView` sizes itself to the video's aspect ratio, so it drops into a `Column` without wrappers.
 
-### Configuración
+### Configuration
 
 ```dart
 final controller = FPlayerController(
@@ -64,19 +64,19 @@ final controller = FPlayerController(
 
 await controller.open(
   FPlayerSource.network(
-    'https://cdn.ejemplo.com/master.m3u8',
+    'https://cdn.example.com/master.m3u8',
     headers: {'Authorization': 'Bearer $token'},
-    title: 'Episodio 4',
+    title: 'Episode 4',
     startAt: Duration(minutes: 12),
   ),
 );
 ```
 
-No olvides `controller.dispose()`.
+Don't forget `controller.dispose()`.
 
-### Personalizar la UI
+### Customising the UI
 
-`FUiConfig` decide qué se muestra; los builders deciden cómo:
+`FUiConfig` decides what is shown; the builders decide how:
 
 ```dart
 FPlayerView(
@@ -87,62 +87,62 @@ FPlayerView(
     showLockButton: false,
     controlsTimeout: Duration(seconds: 3),
   ),
-  bottomBarBuilder: (context, ui) => MiBarra(ui: ui),
+  bottomBarBuilder: (context, ui) => MyBottomBar(ui: ui),
 )
 ```
 
-Dentro de un builder, `FPlayerScope.of(context)` da el mismo estado de vista que usan los controles internos — visibilidad, bloqueo, scrub, encuadre — así que tu barra puede reiniciar el auto-ocultar o iniciar un arrastre sin recablear nada.
+Inside a builder, `FPlayerScope.of(context)` gives you the same view state the built-in controls use — visibility, lock, scrub, fit — so your bar can restart the auto-hide or begin a drag without rewiring anything.
 
-Presets: `FUiConfig.bare()` deja solo el video (los gestos siguen activos, para alimentar tu propio overlay) y `FUiConfig.tv()` arma el layout leanback.
+Presets: `FUiConfig.bare()` leaves only the video (the gestures stay live, to feed your own overlay) and `FUiConfig.tv()` assembles the leanback layout.
 
-Si prefieres montarlo tú desde cero, las capas están sueltas: `FVideoSurface`, `FSubtitleView`, `FProgressBar`, `FSettingsPanel`, `FErrorView`.
+If you would rather build it from scratch, the layers are available on their own: `FVideoSurface`, `FSubtitleView`, `FProgressBar`, `FSettingsPanel`, `FErrorView`.
 
 ### Fullscreen
 
-El botón entra en una ruta que reutiliza el mismo controller, y por tanto la misma textura: no hay recarga ni re-buffer.
+The button pushes a route that reuses the same controller, and therefore the same texture: there is no reload and no re-buffer.
 
 ```dart
 FPlayerView(
   controller: controller,
   fullscreen: const FFullscreenConfig(
-    orientation: FFullscreenOrientation.followVideo,  // horizontal si el video lo es
+    orientation: FFullscreenOrientation.followVideo,  // landscape if the video is
     systemUiMode: SystemUiMode.immersiveSticky,
     exitOnComplete: true,
   ),
 )
 ```
 
-### Android TV y mandos
+### Android TV and remotes
 
 ```dart
-FUiConfig(tv: FTvConfig(mode: FTvMode.auto))   // por defecto
+FUiConfig(tv: FTvConfig(mode: FTvMode.auto))   // the default
 ```
 
-`auto` no cambia nada hasta que llega la primera tecla direccional; a partir de ahí el anillo de foco aparece y el mando manda. Un build solo para TV usa `FTvMode.enabled` y `FPlayerTheme.tv()`.
+`auto` changes nothing until the first directional key arrives; from then on the focus ring appears and the remote is in charge. A TV-only build uses `FTvMode.enabled` and `FPlayerTheme.tv()`.
 
-- **←/→** buscan, acelerando cuanto más se insiste, y el motor recibe un único seek cuando paras. La vista previa se mueve al instante.
-- **↑/↓** mueven el foco entre filas de controles.
-- **OK** activa el control enfocado; la primera pulsación con los controles ocultos solo los muestra.
-- **Atrás** cierra el panel de ajustes, luego los controles, y solo después sale.
-- Las **teclas de medios** actúan siempre, sin revelar nada primero.
+- **←/→** seek, accelerating the longer you hold, and the engine receives a single seek when you stop. The preview moves immediately.
+- **↑/↓** move focus between rows of controls.
+- **OK** activates the focused control; the first press with the controls hidden only reveals them.
+- **Back** closes the settings panel, then the controls, and only then exits.
+- **Media keys** always act, without revealing anything first.
 
-### Gestos
+### Gestures
 
 ```dart
 FUiConfig(
   gestures: FGestureConfig(
-    doubleTapSeeks: true,          // tercio izquierdo/derecho salta, centro pausa
-    horizontalDragSeeks: true,     // con vista previa mientras el dedo está abajo
+    doubleTapSeeks: true,          // left/right third skips, centre toggles
+    horizontalDragSeeks: true,     // with a preview while the finger is down
     verticalDragAdjustsVolume: true,
-    longPressSpeed: 2.0,           // mantener acelera, soltar restaura
+    longPressSpeed: 2.0,           // hold to speed up, release to restore
     pinchChangesFit: true,
   ),
 )
 ```
 
-`FGestureConfig.none()` los apaga todos salvo el toque que muestra los controles.
+`FGestureConfig.none()` turns them all off except the tap that reveals the controls.
 
-### Fuentes
+### Sources
 
 ```dart
 FPlayerSource.network(url, headers: {...}, type: FSourceType.auto)
@@ -150,7 +150,7 @@ FPlayerSource.file('/storage/emulated/0/video.mkv')
 FPlayerSource.asset('assets/intro.mp4')
 ```
 
-`FSourceType.auto` deja que el motor deduzca el formato de la URI y del `Content-Type`. Fuérzalo solo si tu endpoint sirve un manifiesto sin extensión *y* con un `Content-Type` incorrecto.
+`FSourceType.auto` lets the engine infer the format from the URI and the `Content-Type`. Force it only if your endpoint serves a manifest with no extension *and* a wrong `Content-Type`.
 
 ### Control
 
@@ -160,7 +160,7 @@ controller.pause();
 controller.togglePlayPause();
 controller.seekTo(Duration(minutes: 3));
 controller.seekBy(Duration(seconds: -30));
-controller.skipForward();          // usa FPlaybackConfig.seekStep
+controller.skipForward();          // uses FPlaybackConfig.seekStep
 controller.setSpeed(1.5);
 controller.setVolume(0.4);
 controller.toggleMute();
@@ -168,40 +168,40 @@ controller.retry();
 controller.stop();
 ```
 
-### Pistas
+### Tracks
 
 ```dart
 final tracks = controller.tracks;
 
-tracks.audio;   // List<FAudioTrack> — idioma, canales, bitrate, audiodescripción
-tracks.text;    // List<FTextTrack>  — idioma, forzado, CC
-tracks.video;   // List<FVideoTrack> — resolución, bitrate, fps
+tracks.audio;   // List<FAudioTrack> — language, channels, bitrate, audio description
+tracks.text;    // List<FTextTrack>  — language, forced, CC
+tracks.video;   // List<FVideoTrack> — resolution, bitrate, fps
 
 controller.selectAudioTrack(tracks.audio.first);
 controller.selectTextTrack(tracks.text.first);
 controller.disableSubtitles();
-controller.selectVideoTrack(tracks.video.last);   // fija la calidad
-controller.enableAutoQuality();                   // vuelve a adaptativo
+controller.selectVideoTrack(tracks.video.last);   // pins the quality
+controller.enableAutoQuality();                   // back to adaptive
 ```
 
-**Seleccionada no es lo mismo que activa.** En modo adaptativo el motor mantiene *todas* las calidades del pool como seleccionadas y va cambiando entre ellas:
+**Selected is not the same as active.** In adaptive mode the engine keeps *every* quality in the pool selected and switches between them:
 
 ```dart
-tracks.activeVideo;    // la que se está decodificando ahora mismo
-tracks.selectedVideo;  // la que fijó el usuario; null si está en auto
+tracks.activeVideo;    // the one being decoded right now
+tracks.selectedVideo;  // the one the user pinned; null when on auto
 tracks.isVideoAuto;
 
-// Para etiquetar el botón de calidad:
+// To label the quality button:
 final label = tracks.isVideoAuto
     ? 'Auto (${tracks.activeVideo?.qualityLabel})'
     : tracks.selectedVideo!.qualityLabel;
 ```
 
-`qualityLabel` normaliza a los peldaños que la gente reconoce. Contenido cinematográfico es más ancho que 16:9, así que una rendition de 1680×750 se etiqueta `1080p` y no `750p`; `width` y `height` siguen disponibles si prefieres los números crudos.
+`qualityLabel` normalises to the rungs people recognise. Cinematic content is wider than 16:9, so a 1680×750 rendition is labelled `1080p` and not `750p`; `width` and `height` are still there if you prefer the raw numbers.
 
-### Subtítulos
+### Subtitles
 
-Declarados en la fuente:
+Declared on the source:
 
 ```dart
 FPlayerSource.network(
@@ -209,86 +209,86 @@ FPlayerSource.network(
   headers: {'Authorization': 'Bearer $token'},
   subtitles: [
     FSubtitleSource.network(
-      'https://subs.ejemplo.com/es.vtt',
-      label: 'Español',
+      'https://subs.example.com/es.vtt',
+      label: 'Spanish',
       language: 'es',
-      headers: {'X-Api-Key': 'otra-cosa'},   // headers propios de esta pista
+      headers: {'X-Api-Key': 'something-else'},   // this track's own headers
       selectedByDefault: true,
     ),
   ],
 )
 ```
 
-Los headers se aplican **por URI**: la petición del subtítulo lleva solo los suyos. El `Authorization` del media nunca se filtra a un host de subtítulos de terceros.
+Headers are applied **per URI**: the subtitle request carries only its own. The media's `Authorization` never leaks to a third-party subtitle host.
 
-Añadir uno después de empezar (recarga la fuente conservando la posición):
+Adding one after playback has started (reloads the source, keeping the position):
 
 ```dart
-await controller.addSubtitle(FSubtitleSource.network(uri, label: 'Español'));
+await controller.addSubtitle(FSubtitleSource.network(uri, label: 'Spanish'));
 ```
 
-Selección automática por idioma:
+Automatic selection by language:
 
 ```dart
 FPlaybackConfig(
   preferredAudioLanguages: ['es', 'en'],
   preferredTextLanguages: ['es'],
-  autoSelectSubtitles: true,   // por defecto false: los subtítulos empiezan apagados
+  autoSelectSubtitles: true,   // false by default: subtitles start off
 )
 ```
 
-Estilo:
+Styling:
 
 ```dart
 FPlayerConfig(
   subtitleStyle: FSubtitleStyle(
     fontSize: 18,
-    scale: 1.2,                    // multiplicador para el usuario
-    edge: FSubtitleEdge.outline,   // legible sobre cualquier imagen
+    scale: 1.2,                    // the user's multiplier
+    edge: FSubtitleEdge.outline,   // legible over any picture
     bottomMargin: 0.06,
   ),
 )
 
-// O con caja opaca:
+// Or with an opaque box:
 FSubtitleStyle.boxed()
 ```
 
-`FSubtitleView` acepta `bottomInset` para subir los subtítulos mientras los controles están visibles.
+`FSubtitleView` takes a `bottomInset` to lift the subtitles while the controls are up.
 
-> Ajustar la sincronía de los subtítulos en caliente todavía no está soportado; el porqué y las opciones están en `docs/PLAN.md`.
+> Adjusting subtitle sync at runtime is not supported yet; the why and the options are in `docs/PLAN.md`.
 
-### Storyboard (miniaturas en el slider)
+### Storyboard (thumbnails on the seek bar)
 
 ```dart
 FPlayerSource.network(
   url,
-  storyboard: FStoryboardSource.vtt('https://cdn.ejemplo.com/sb.vtt', headers: {...}),
+  storyboard: FStoryboardSource.vtt('https://cdn.example.com/sb.vtt', headers: {...}),
 )
 ```
 
-Nada más: si la fuente declara uno, `FPlayerView` lo carga y muestra la miniatura sobre el thumb al arrastrar. El índice es WebVTT donde cada cue apunta a una imagen, opcionalmente con `#xywh=x,y,w,h` para recortar de un sprite sheet; las URLs relativas se resuelven contra la del propio VTT.
+Nothing else: if the source declares one, `FPlayerView` loads it and shows the thumbnail above the thumb while dragging. The index is WebVTT where each cue points at an image, optionally with `#xywh=x,y,w,h` to crop out of a sprite sheet; relative URLs resolve against the VTT's own.
 
-Las hojas se decodifican una vez y se recortan en canvas, con caché LRU y deduplicado de peticiones en vuelo. Pasa un `FStoryboardController` compartido a varios players si quieres una sola caché para toda la app.
+Sheets are decoded once and cropped on canvas, with an LRU cache and de-duplication of in-flight requests. Pass a shared `FStoryboardController` to several players if you want a single cache for the whole app.
 
-### Cola de reproducción
+### Playback queue
 
 ```dart
-await controller.setPlaylist(episodios, startIndex: 2);
+await controller.setPlaylist(episodes, startIndex: 2);
 
 controller.next();
 controller.previous();
 controller.jumpTo(0);
 
-controller.value.currentIndex;     // posición en la cola
+controller.value.currentIndex;     // position in the queue
 controller.value.hasNext;
-controller.value.nextInPlaylist;   // qué viene después
+controller.value.nextInPlaylist;   // what comes next
 ```
 
-Al terminar un ítem pasa al siguiente solo (`FPlaybackConfig.autoAdvance`, activo por defecto), y `repeatPlaylist` vuelve al principio tras el último. Cerca del final aparece la tarjeta de "a continuación" con el título del siguiente, visible aunque los controles estén ocultos.
+When an item ends it moves on by itself (`FPlaybackConfig.autoAdvance`, on by default), and `repeatPlaylist` wraps back to the start after the last one. Near the end an "up next" card appears with the next title, visible even with the controls hidden.
 
-`previous` reinicia el ítem si ya llevas más de tres segundos, y solo salta al anterior si acabas de empezar — que es lo que hace ese botón en todas partes. Abrir una fuente con `open()` limpia la cola; `stop()` la conserva.
+`previous` restarts the current item if you are more than three seconds in, and only jumps back if you have just started — which is what that button does everywhere. Opening a source with `open()` clears the queue; `stop()` keeps it.
 
-### Capítulos y saltar intro
+### Chapters and skip intro
 
 ```dart
 FPlayerSource.network(
@@ -296,12 +296,12 @@ FPlayerSource.network(
   chapters: [
     FChapter(start: Duration.zero, end: Duration(seconds: 45),
              title: 'Intro', kind: FChapterKind.intro),
-    FChapter(start: Duration(seconds: 45), title: 'Episodio'),
+    FChapter(start: Duration(seconds: 45), title: 'Episode'),
   ],
 )
 ```
 
-Los límites aparecen troquelados en la barra, y mientras la reproducción está dentro de un tramo marcado como `intro`, `recap`, `credits` o `ad` aparece un botón para saltarlo — visible aunque los controles estén ocultos, que es justo cuando hace falta.
+The boundaries are punched out of the seek bar, and while playback sits inside a span marked `intro`, `recap`, `credits` or `ad` a button appears to skip it — visible even with the controls hidden, which is exactly when it is needed.
 
 ### Picture-in-Picture
 
@@ -309,7 +309,7 @@ Los límites aparecen troquelados en la barra, y mientras la reproducción está
 FPlayerConfig(pip: FPipConfig(autoEnterOnLeave: true))
 ```
 
-La ventana de PiP refleja **todo** el árbol Flutter, así que usa `isPipActive` para desnudar la UI:
+The PiP window mirrors **the whole** Flutter tree, so use `isPipActive` to strip the UI down:
 
 ```dart
 if (controller.value.isPipActive) {
@@ -317,114 +317,114 @@ if (controller.value.isPipActive) {
 }
 ```
 
-`isPipSupported` es false hasta el primer frame: el sistema necesita una relación de aspecto para dimensionar la ventana.
+`isPipSupported` is false until the first frame: the system needs an aspect ratio to size the window.
 
-### Sesión de medios y background
+### Media session and background
 
 ```dart
 FPlayerConfig(background: FBackgroundConfig.audioInBackground())
 ```
 
-Publica una sesión con notificación, controles en la pantalla de bloqueo y botones de auriculares, y mantiene el audio al salir de la app. Apagada por defecto para no imponer una notificación a quien no la quiere. Los modos son `stop`, `pause` (por defecto) y `continueAudio`.
+Publishes a session with a notification, lock-screen controls and headset buttons, and keeps the audio going when you leave the app. Off by default, so a notification is never imposed on an app that doesn't want one. The modes are `stop`, `pause` (the default) and `continueAudio`.
 
-### Descargas offline
+### Offline downloads
 
 ```dart
 await FDownloadManager.instance.initialize(
   const FDownloadConfig(requirements: FDownloadRequirements.unmeteredOnly()),
 );
 
-// Qué se puede bajar y cuánto ocupa
+// What can be fetched and how much space it takes
 final options = await FDownloadManager.instance.inspect(source);
 
 await FDownloadManager.instance.enqueue(
   source,
-  selection: const FDownloadSelection.standard(),   // hasta 720p
+  selection: const FDownloadSelection.standard(),   // up to 720p
 );
 ```
 
-`FDownloadManager` es un `ChangeNotifier`: escúchalo y tendrás la cola con estado, progreso y bytes. Los requisitos (solo Wi-Fi, solo cargando…) los aplica el sistema, así que una descarga esperando Wi-Fi se reanuda sola con la app cerrada.
+`FDownloadManager` is a `ChangeNotifier`: listen to it and you have the queue with state, progress and bytes. The requirements (unmetered only, charging only…) are enforced by the system, so a download waiting for Wi-Fi resumes on its own with the app closed.
 
-Lo importante: **una descarga completada se reproduce con el mismo `FPlayerSource.network` de siempre**. La caché está indexada por URI, así que el sitio donde llamas a `open()` no sabe que los bytes son locales.
+The part that matters: **a finished download plays through the ordinary `FPlayerSource.network`**. The cache is keyed by URI, so the place where you call `open()` has no idea the bytes are local.
 
-Los metadatos de la fuente viajan en el índice de descargas de Media3, así que una pantalla de "Mis descargas" se reconstruye sola desde `list()` — títulos, pósters, ids — sin una segunda base de datos que mantener sincronizada.
+The source's metadata travels inside Media3's download index, so a "My downloads" screen rebuilds itself from `list()` — titles, posters, ids — with no second database to keep in sync.
 
-> Los headers se guardan en el índice para que una descarga reanudada tras un reinicio pueda re-autenticarse. Eso deja un token en disco: usa tokens de vida corta.
+> Headers are stored in the index so a download resumed after a reboot can re-authenticate. That leaves a token on disk: use short-lived tokens.
 
-### Analítica
+### Analytics
 
 ```dart
 final tracker = FPlaybackSessionTracker(
   controller: controller,
-  observers: [MiObservador()],
+  observers: [MyObserver()],
 );
 // ...
 tracker.dispose();
 ```
 
-Se engancha desde fuera —escucha el controller, no lo modifica— y deriva: tiempo visto real (sin pausas ni atascos, ajustado por velocidad), tiempo hasta el primer frame, número y duración de rebuffers, cambios de calidad, seeks, bitrate y altura media ponderados por tiempo en pantalla.
+It attaches from the outside — it listens to the controller, it doesn't modify it — and derives: real watched time (without pauses or stalls, adjusted for speed), time to first frame, the count and duration of rebuffers, quality changes, seeks, and bitrate and height averaged by time on screen.
 
-Para enviarlo a un backend con cola persistente y reintentos, usa el paquete hermano `fplayer_telemetry`.
+To ship that to a backend with a persistent queue and retries, use the sibling package `fplayer_telemetry`.
 
-> Bytes descargados y frames descartados requieren un puente nativo que aún no existe; los campos están en el modelo pero siempre valen null.
+> Bytes downloaded and dropped frames need a native bridge that does not exist yet; the fields are in the model but always read null.
 
-### Estado
+### State
 
-`controller.value` es un `FPlayerValue` inmutable:
+`controller.value` is an immutable `FPlayerValue`:
 
 ```dart
 final v = controller.value;
 v.status;            // idle · loading · ready · buffering · completed · error
 v.isPlaying;
 v.position;  v.buffered;  v.duration;  v.remaining;
-v.progress;  v.bufferedProgress;       // 0..1, listos para un slider
-v.aspectRatio;                          // ya considera rotación y píxeles anamórficos
+v.progress;  v.bufferedProgress;       // 0..1, ready for a slider
+v.aspectRatio;                          // already accounts for rotation and anamorphic pixels
 v.isLive;    v.isSeekable;
 v.tracks;                               // FTracks
-v.cues;                                 // List<FSubtitleCue> en pantalla ahora
+v.cues;                                 // List<FSubtitleCue> on screen right now
 v.error;                                // FPlayerError?
 ```
 
-### Errores
+### Errors
 
 ```dart
 switch (controller.value.error?.code) {
   case FPlayerErrorCode.unauthorized: await refreshToken(); controller.retry();
-  case FPlayerErrorCode.notFound:     mostrarNoDisponible();
-  case FPlayerErrorCode.network:      // ya se reintentó solo según FRetryPolicy
-  default:                            mostrarGenerico();
+  case FPlayerErrorCode.notFound:     showUnavailable();
+  case FPlayerErrorCode.network:      // already retried on its own, per FRetryPolicy
+  default:                            showGeneric();
 }
 ```
 
-Los errores marcados como reintentables se reintentan solos con backoff exponencial antes de llegar a la UI, para no parpadear un overlay que desaparece dos segundos después.
+Errors marked retryable are retried on their own with exponential backoff before they reach the UI, so an overlay doesn't flash up and vanish two seconds later.
 
-### Eventos
+### Events
 
-Para analítica y para reaccionar a transiciones concretas:
+For analytics, and for reacting to specific transitions:
 
 ```dart
 controller.events.listen((event) {
-  if (event is FCompleted) reproducirSiguiente();
+  if (event is FCompleted) playNext();
   if (event is FErrorOccurred) log(event.error);
 });
 ```
 
-### Decodificación
+### Decoding
 
-Hardware por defecto. Los otros modos existen para depurar o para esquivar dispositivos con un decodificador roto para cierto códec:
+Hardware by default. The other modes exist for debugging, or for dodging devices with a broken decoder for a given codec:
 
 ```dart
 FDecoderConfig(mode: FDecoderMode.softwareFirst)
-FDecoderConfig.dataSaver()   // tope de 720p / 2.5 Mbps
+FDecoderConfig.dataSaver()   // capped at 720p / 2.5 Mbps
 ```
 
-Nota sobre AV1: Android 12+ trae un decodificador AV1 por software en la plataforma y ExoPlayer lo usa solo. En dispositivos anteriores sin AV1 por hardware no hay decodificador disponible; ese caso lo cubrirá el motor alternativo previsto en la fase 11.
+A note on AV1: Android 12+ ships a software AV1 decoder in the platform and ExoPlayer picks it up by itself. On older devices with no hardware AV1 there is no decoder available; that case is covered by the alternative engine from phase 11.
 
-## Configuración de Android
+## Android setup
 
-El plugin declara `INTERNET` y nada más: no quiero obligar a toda app a justificar permisos que quizá no use.
+The plugin declares `INTERNET` and nothing else: I don't want to force every app to justify permissions it may never use.
 
-**HTTP plano** (streams sin TLS):
+**Cleartext HTTP** (streams without TLS):
 ```xml
 <application android:usesCleartextTraffic="true">
 ```
@@ -436,7 +436,7 @@ El plugin declara `INTERNET` y nada más: no quiero obligar a toda app a justifi
           android:resizeableActivity="true" ... />
 ```
 
-**Sesión de medios** (solo si activas `background.mediaSession` o el modo `continueAudio`):
+**Media session** (only if you turn on `background.mediaSession` or the `continueAudio` mode):
 ```xml
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
@@ -451,14 +451,14 @@ El plugin declara `INTERNET` y nada más: no quiero obligar a toda app a justifi
 </service>
 ```
 
-Sin ese `<service>` la sesión se omite en silencio y `hasMediaSession` queda en false — se comprueba antes de construir nada.
+Without that `<service>` the session is skipped silently and `hasMediaSession` stays false — it is checked before anything gets built.
 
-**Descargas en background** (sin esto funcionan, pero solo mientras la app está viva):
+**Background downloads** (they work without this, but only while the app is alive):
 ```xml
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-<!-- Solo para reanudar tras un reinicio del dispositivo -->
+<!-- Only to resume after a device reboot -->
 <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
 <service android:name="dev.chikenare.fplayer.download.FplayerDownloadService"
@@ -470,15 +470,15 @@ Sin ese `<service>` la sesión se omite en silencio y `hasMediaSession` queda en
 </service>
 ```
 
-**Android TV**, para que la app aparezca en el lanzador leanback:
+**Android TV**, so the app shows up in the leanback launcher:
 ```xml
 <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 <uses-feature android:name="android.software.leanback" android:required="false" />
 ```
 
-## Ejemplo
+## Example
 
-`example/` demuestra HLS, DASH, MP4 con headers y subtítulo externo verificados contra un servidor local, storyboard, capítulos y una fuente que falla a propósito, con un panel del estado en vivo y las métricas de sesión.
+`example/` demonstrates HLS, DASH, MP4 with headers and an external subtitle verified against a local server, storyboard, chapters and a source that fails on purpose, with a live state panel and the session metrics.
 
 ```bash
 cd example && flutter run
@@ -487,10 +487,10 @@ cd example && flutter run
 ## Tests
 
 ```bash
-flutter test                           # 166 tests
+flutter test                           # 169 tests
 cd fplayer_telemetry && flutter test   # 26 tests
 ```
 
-## Licencia
+## License
 
 MIT
