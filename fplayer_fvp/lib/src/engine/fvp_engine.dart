@@ -45,6 +45,9 @@ class FFvpEngine implements FPlaybackEngine {
   Duration _progressInterval = const Duration(milliseconds: 250);
 
   FPlayerSource? _source;
+
+  /// Bumped by every load, so a slower one cannot finish on top of a newer one.
+  int _sourceGeneration = 0;
   int _textureId = noTexture;
   bool _isDisposed = false;
   bool _isTextDisabled = true;
@@ -58,7 +61,9 @@ class FFvpEngine implements FPlaybackEngine {
   bool _wasPlaying = false;
 
   @override
-  int get textureId => _textureId;
+  /// Null while there is nothing to render, which is what `FPlaybackEngine` promises and what
+  /// the video surface checks: `-1` is libmdk's own sentinel and stays inside this class.
+  int? get textureId => _textureId == noTexture ? null : _textureId;
 
   @override
   Stream<FEngineSignal> get signals => _signals.stream;
@@ -96,6 +101,11 @@ class FFvpEngine implements FPlaybackEngine {
     final player = _player;
     if (player == null || _isDisposed) return;
 
+    // Two loads in quick succession — a retry landing on top of a source change — otherwise
+    // interleave their prepare and their texture update, and the loser overwrites the winner's
+    // texture and duration.
+    final generation = ++_sourceGeneration;
+
     _source = source;
     _hasReportedInitialized = false;
     _releaseTextureState();
@@ -117,7 +127,7 @@ class FFvpEngine implements FPlaybackEngine {
 
     final startAt = source.startAt ?? Duration.zero;
     final result = await player.prepare(position: startAt.inMilliseconds);
-    if (_isDisposed) return;
+    if (_isDisposed || generation != _sourceGeneration) return;
 
     if (result < 0) {
       _fail(
@@ -184,11 +194,16 @@ class FFvpEngine implements FPlaybackEngine {
     _player?.loop = looping ? -1 : 0;
   }
 
+  /// Reloads the current source from where playback had reached.
+  ///
+  /// Not from `source.startAt`: that is where this media was *opened*, so a retry forty minutes
+  /// in used to throw the viewer back to minute twelve.
   @override
   Future<void> retry() async {
     final source = _source;
     if (source == null) return;
-    await setSource(source);
+    final resumeAt = _player?.position ?? 0;
+    await setSource(source.copyWith(startAt: Duration(milliseconds: resumeAt)));
   }
 
   @override
@@ -299,10 +314,14 @@ class FFvpEngine implements FPlaybackEngine {
   }
 
   Future<void> _attachTexture(mdk.Player player) async {
+    final generation = _sourceGeneration;
     final id = await player.updateTexture(
       width: config.fvpMaxTextureWidth,
       height: config.fvpMaxTextureHeight,
     );
+    // A texture for media nobody is playing any more: the load that asked for it has been
+    // overtaken, and installing it now would point the surface at the wrong picture.
+    if (_isDisposed || generation != _sourceGeneration) return;
     _textureId = id;
   }
 

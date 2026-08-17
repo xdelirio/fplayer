@@ -29,9 +29,15 @@ import 'player_value.dart';
 /// await controller.open(FPlayerSource.network('https://…/master.m3u8'));
 /// ```
 class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
+  /// [engine] replaces the Media3 backend with another implementation of [FPlaybackEngine] —
+  /// `fplayer_fvp`'s libmdk engine, the fallback that composes the two, or a fake in a test.
+  ///
+  /// Deliberately not `@visibleForTesting`: installing an engine is the documented way to use a
+  /// different backend, and that annotation made every consumer doing it fail their own
+  /// analysis. It is an advanced seam, not a private one.
   FPlayerController({
     this.config = const FPlayerConfig(),
-    @visibleForTesting FPlaybackEngine? engine,
+    FPlaybackEngine? engine,
   }) : _engine = engine ?? FMedia3Engine();
 
   final FPlayerConfig config;

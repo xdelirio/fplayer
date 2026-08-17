@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fplayer/fplayer.dart';
 import 'package:fplayer_fvp/fplayer_fvp.dart';
-// Direct import until `fplayer.dart` exports the engine layer; see the phase 11 report.
 
 /// A stand-in for either backend, so the composite's own logic can be exercised without a device.
 class _StubEngine implements FPlaybackEngine {
@@ -18,16 +17,23 @@ class _StubEngine implements FPlaybackEngine {
   FPlayerSource? source;
   bool isDisposed = false;
 
+  /// Holds `create` open, so a test can stand inside the window where the composite has let go
+  /// of one engine and not yet taken hold of the next.
+  Completer<void>? createGate;
+
   void emit(FEngineSignal signal) => _signals.add(signal);
 
   @override
-  int get textureId => texture;
+  int? get textureId => texture;
 
   @override
   Stream<FEngineSignal> get signals => _signals.stream;
 
   @override
-  Future<void> create(FPlayerConfig config) async => calls.add('create');
+  Future<void> create(FPlayerConfig config) async {
+    calls.add('create');
+    await createGate?.future;
+  }
 
   @override
   Future<void> setSource(FPlayerSource value) async {
@@ -264,6 +270,88 @@ void main() {
     expect(fallback.calls, contains('pause'));
 
     await engine.dispose();
+  });
+
+
+  test('the viewer lands on the engine they were watching, not a fresh one', () async {
+    final engine = build(FEngineMode.automatic);
+    addTearDown(engine.dispose);
+
+    await engine.create(const FPlayerConfig());
+    await engine.setSource(source);
+    await engine.play();
+    await engine.setSpeed(1.5);
+    await engine.setVolume(0.4);
+    await engine.setLooping(looping: true);
+    await engine.selectTrack(FTrackType.audio, 'audio:1');
+    fallback.calls.clear();
+
+    primary.emit(decoderFailure);
+    await Future<void>.delayed(Duration.zero);
+
+    // Everything the viewer had set, re-applied — and playback resumed because it *was* playing,
+    // rather than because autoPlay says so.
+    expect(fallback.calls, contains('setSpeed'));
+    expect(fallback.calls, contains('setVolume'));
+    expect(fallback.calls, contains('setLooping'));
+    expect(fallback.calls, contains('selectTrack'));
+    expect(fallback.calls, contains('play'));
+    expect(fallback.calls, isNot(contains('pause')));
+  });
+
+  test('a paused player does not start playing because it changed engines', () async {
+    final engine = build(FEngineMode.automatic);
+    addTearDown(engine.dispose);
+
+    await engine.create(const FPlayerConfig());
+    await engine.setSource(source);
+    await engine.play();
+    await engine.pause();
+    fallback.calls.clear();
+
+    primary.emit(decoderFailure);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(fallback.calls, contains('pause'));
+    expect(fallback.calls, isNot(contains('play')));
+  });
+
+  test('nothing is rendered while there is no engine to render from', () async {
+    final engine = build(FEngineMode.automatic);
+    addTearDown(engine.dispose);
+
+    // Before creation there is no texture at all — null, not the fallback's own -1 sentinel,
+    // which the video surface would happily try to build a Texture from.
+    expect(engine.textureId, isNull);
+
+    await engine.create(const FPlayerConfig());
+    expect(engine.textureId, 7);
+  });
+
+  test('a command issued mid-swap reaches the engine that arrives', () async {
+    final engine = build(FEngineMode.automatic);
+    addTearDown(engine.dispose);
+
+    await engine.create(const FPlayerConfig());
+    await engine.setSource(source);
+
+    // Hold the new engine's creation open, so the test can act inside the window where the
+    // composite has let go of one engine and not yet taken hold of the next. A viewer pressing
+    // play there used to press against nothing at all: no engine, no error, no retry.
+    final gate = Completer<void>();
+    fallback
+      ..createGate = gate
+      ..calls.clear();
+
+    primary.emit(decoderFailure);
+    await Future<void>.delayed(Duration.zero);
+
+    await engine.play();
+
+    gate.complete();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(fallback.calls, contains('play'));
   });
 
   test('disposing tears down the engine in use', () async {

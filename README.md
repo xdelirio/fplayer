@@ -27,7 +27,7 @@ A Flutter video player built on **Media3/ExoPlayer**, meant to be shared across 
 - **Session analytics**: real watched time, startup, rebuffers, quality changes
 - Loose layers (`FVideoSurface`, `FSubtitleView`, `FProgressBar`) for building your own UI
 
-Outside the base package: the `fvp` engine for AV1 on older Android lives in `fplayer_fvp`, because it weighs 11.5 MB per ABI. Cast is not implemented.
+Outside the base package: the `fvp` engine for AV1 on older Android lives in `fplayer_fvp`, because it weighs 11.5 MB per ABI. Both siblings — `fplayer_fvp` and `fplayer_telemetry` — are consumed as path or git dependencies rather than from pub.dev. Cast is not implemented.
 
 ## Requirements
 
@@ -93,7 +93,7 @@ FPlayerView(
 
 Inside a builder, `FPlayerScope.of(context)` gives you the same view state the built-in controls use — visibility, lock, scrub, fit — so your bar can restart the auto-hide or begin a drag without rewiring anything.
 
-Presets: `FUiConfig.bare()` leaves only the video (the gestures stay live, to feed your own overlay) and `FUiConfig.tv()` assembles the leanback layout.
+Presets: `FUiConfig.bare()` leaves only the video — no chrome and no gestures, for a player you drive entirely yourself — and `FUiConfig.tv()` assembles the leanback layout.
 
 If you would rather build it from scratch, the layers are available on their own: `FVideoSurface`, `FSubtitleView`, `FProgressBar`, `FTrackDialog`, `FSettingsPanel`, `FErrorView`.
 
@@ -373,7 +373,7 @@ await FDownloadManager.instance.enqueue(
 
 The part that matters: **a finished download plays through the ordinary `FPlayerSource.network`**. The cache is keyed by URI, so the place where you call `open()` has no idea the bytes are local.
 
-The source's metadata travels inside Media3's download index, so a "My downloads" screen rebuilds itself from `list()` — titles, posters, ids — with no second database to keep in sync.
+The source's metadata travels inside Media3's download index, so a "My downloads" screen rebuilds itself from `manager.items` — titles, posters, ids — with no second database to keep in sync. `.completed`, `.active` and `.stateOf(source)` are that same list, filtered.
 
 > Headers are stored in the index so a download resumed after a reboot can re-authenticate. That leaves a token on disk: use short-lived tokens.
 
@@ -504,7 +504,7 @@ Without that `<service>` the session is skipped silently and `hasMediaSession` s
 
 ## Example
 
-`example/` demonstrates HLS, DASH, MP4 with headers and an external subtitle verified against a local server, storyboard, chapters and a source that fails on purpose, with a live state panel and the session metrics.
+`example/` demonstrates HLS, DASH, MP4 with headers and an external subtitle verified against a local server, a storyboard, a queue with the up-next card and a source that fails on purpose, with a live state panel and the session metrics. **TV layout** opens the leanback screen — full screen, `FUiConfig.tv()`, driven entirely by a D-pad — and **Downloads** the offline queue.
 
 ```bash
 cd example && flutter run
@@ -513,10 +513,11 @@ cd example && flutter run
 ## Tests
 
 ```bash
-flutter test                           # 169 tests
-cd fplayer_telemetry && flutter test   # 26 tests
+flutter test                           # the package
+cd fplayer_telemetry && flutter test   # the telemetry sibling
+cd fplayer_fvp && flutter test         # the libmdk engine sibling
 ```
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

@@ -30,7 +30,10 @@ import 'download_state.dart';
 /// Downloading requires the host app to declare the download service; see the README. Without it
 /// the queue still runs, but only while the app is in the foreground.
 class FDownloadManager extends ChangeNotifier {
-  FDownloadManager({@visibleForTesting FDownloadPlatform? platform})
+  /// [platform] replaces the Media3 download backend, for another implementation of
+  /// [FDownloadPlatform] or a fake in a test. Advanced, but public: the interface is exported,
+  /// and an interface nobody can install is not an interface.
+  FDownloadManager({FDownloadPlatform? platform})
       : _platform = platform ?? FMedia3DownloadPlatform();
 
   /// The process-wide queue.
