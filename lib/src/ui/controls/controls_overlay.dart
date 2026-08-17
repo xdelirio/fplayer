@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import '../../core/player_status.dart';
 import '../player_scope.dart';
 import '../time_format.dart';
+import '../tv/tv_layer.dart';
 import '../video_fit.dart';
 import 'player_button.dart';
 import 'progress_bar.dart';
@@ -270,8 +271,7 @@ class _BottomBar extends StatelessWidget {
     final theme = ui.theme;
     final config = ui.config;
     final l10n = ui.localizations;
-    final controller = ui.controller;
-    final value = controller.value;
+    final value = ui.controller.value;
 
     return SafeArea(
       top: false,
@@ -299,53 +299,19 @@ class _BottomBar extends StatelessWidget {
             ],
             Row(
               children: [
-                if (config.showAudioSubtitlesButton && _hasTracksToPick(ui))
-                  FPlayerButton(
-                    icon: controller.tracks.selectedText != null
-                        ? Icons.closed_caption
-                        : Icons.closed_caption_off_outlined,
-                    theme: theme,
-                    isActive: controller.tracks.selectedText != null,
-                    semanticLabel: l10n.audioAndSubtitles,
-                    onPressed: () => ui.openPanel(FPlayerPanel.tracks),
+                // The controls scroll rather than overflow. Which of them are on is the app's
+                // call, and a named control plus a quality summary plus a speed on a 360-wide
+                // phone is wider than the phone — a row that runs off the edge takes the
+                // fullscreen button with it, where scrolling only costs a swipe.
+                Flexible(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: _leadingControls(context, width),
+                    ),
                   ),
-                if (config.showQualityButton && controller.tracks.hasMultipleQualities)
-                  FPlayerTextButton(
-                    // The long form only when there is room for it: `Auto · 1080p` says more, but
-                    // not at the cost of pushing the fullscreen button off a phone.
-                    label: width < 420
-                        ? controller.tracks.activeVideo?.qualityLabel ?? l10n.auto
-                        : qualitySummary(ui),
-                    theme: theme,
-                    semanticLabel: l10n.quality,
-                    onPressed: () => ui.openPanel(FPlayerPanel.quality),
-                  ),
-                if (config.showSpeedButton)
-                  FPlayerTextButton(
-                    label: formatPlaybackSpeed(value.speed),
-                    theme: theme,
-                    semanticLabel: l10n.speed,
-                    onPressed: () => ui.openPanel(FPlayerPanel.speed),
-                  ),
-                if (config.showMuteButton)
-                  FPlayerButton(
-                    icon: value.isMuted ? Icons.volume_off : Icons.volume_up,
-                    theme: theme,
-                    isActive: value.isMuted,
-                    semanticLabel: value.isMuted ? l10n.unmute : l10n.mute,
-                    onPressed: controller.toggleMute,
-                  ),
-                if (config.showFitButton)
-                  FPlayerButton(
-                    icon: ui.fit == FVideoFit.cover
-                        ? Icons.fullscreen_exit
-                        : Icons.aspect_ratio,
-                    theme: theme,
-                    semanticLabel: 'Fit: ${ui.fit.name}',
-                    onPressed: ui.cycleFit,
-                  ),
-                ...actions,
-                const Spacer(),
+                ),
                 if (config.showFullscreenButton)
                   FPlayerButton(
                     icon: ui.isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
@@ -360,6 +326,65 @@ class _BottomBar extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  List<Widget> _leadingControls(BuildContext context, double width) {
+    final theme = ui.theme;
+    final config = ui.config;
+    final l10n = ui.localizations;
+    final controller = ui.controller;
+    final value = controller.value;
+    final isTv = FTvScope.maybeOf(context)?.isActive ?? false;
+
+    return [
+      if (config.showAudioSubtitlesButton && _hasTracksToPick(ui))
+        // Named rather than a `CC` glyph: the control picks a language as often as it turns
+        // subtitles on, and no icon says that. The short form only when the row is tight.
+        FPlayerTextButton(
+          label: width < 420 ? l10n.audioAndSubsShort : l10n.audioAndSubtitles,
+          theme: theme,
+          isActive: controller.tracks.selectedText != null,
+          semanticLabel: l10n.audioAndSubtitles,
+          onPressed: () => ui.openPanel(FPlayerPanel.tracks),
+        ),
+      if (config.showQualityButton && controller.tracks.hasMultipleQualities)
+        FPlayerTextButton(
+          // The long form only when there is room for it: `Auto · 1080p` says more, but not at
+          // the cost of pushing everything else off a phone.
+          label: width < 420
+              ? controller.tracks.activeVideo?.qualityLabel ?? l10n.auto
+              : qualitySummary(ui),
+          theme: theme,
+          semanticLabel: l10n.quality,
+          onPressed: () => ui.openPanel(FPlayerPanel.quality),
+        ),
+      // Speed is a phone control. On a remote it is one more stop the D-pad has to walk through
+      // to reach anything else, for a setting nobody changes from a sofa — and the settings
+      // panel still carries it for the rare time they do.
+      if (config.showSpeedButton && !isTv)
+        FPlayerTextButton(
+          label: formatPlaybackSpeed(value.speed),
+          theme: theme,
+          semanticLabel: l10n.speed,
+          onPressed: () => ui.openPanel(FPlayerPanel.speed),
+        ),
+      if (config.showMuteButton)
+        FPlayerButton(
+          icon: value.isMuted ? Icons.volume_off : Icons.volume_up,
+          theme: theme,
+          isActive: value.isMuted,
+          semanticLabel: value.isMuted ? l10n.unmute : l10n.mute,
+          onPressed: controller.toggleMute,
+        ),
+      if (config.showFitButton)
+        FPlayerButton(
+          icon: ui.fit == FVideoFit.cover ? Icons.fullscreen_exit : Icons.aspect_ratio,
+          theme: theme,
+          semanticLabel: 'Fit: ${ui.fit.name}',
+          onPressed: ui.cycleFit,
+        ),
+      ...actions,
+    ];
   }
 }
 

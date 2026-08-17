@@ -7,6 +7,9 @@ import '../../config/tv_config.dart';
 import '../player_scope.dart';
 
 /// Seek one step in a direction, from a remote's left/right key.
+///
+/// Dispatched by the seek bar while it holds focus, and available to any custom control that
+/// wants the same accelerated, deferred seek: `Actions.invoke(context, const FSeekIntent(1))`.
 class FSeekIntent extends Intent {
   const FSeekIntent(this.direction);
 
@@ -16,9 +19,13 @@ class FSeekIntent extends Intent {
 
 /// Remote-control handling wrapped around the player.
 ///
-/// Directional keys are claimed here rather than left to Flutter's focus traversal: on a video
-/// player, left and right mean *scrub*, not "move to the next button". Up and down stay with the
-/// default traversal, which is what moves focus between the rows of controls.
+/// Directional keys stay with Flutter's focus traversal, so left and right walk the row of
+/// controls the way a remote user expects everywhere else. Scrubbing is what the *seek bar* does
+/// with those keys once it holds focus: [FProgressBar] asks this layer for a step, and the
+/// acceleration and the deferred commit live here.
+///
+/// What this layer does own is everything that is not tied to one control: media keys, back, and
+/// the rule that the first press on a hidden player only brings the chrome up.
 class FTvLayer extends StatefulWidget {
   const FTvLayer({
     required this.ui,
@@ -75,20 +82,22 @@ class FTvLayerState extends State<FTvLayer> {
         // This node exists to watch keys on their way out, not to take focus away from controls.
         canRequestFocus: false,
         onKeyEvent: _onKey,
-        child: Shortcuts(
-          shortcuts: const {
-            SingleActivator(LogicalKeyboardKey.arrowLeft): FSeekIntent(-1),
-            SingleActivator(LogicalKeyboardKey.arrowRight): FSeekIntent(1),
+        child: Actions(
+          // Left as an action rather than a shortcut: a shortcut here would fire wherever focus
+          // happens to be, which is exactly the bug where every button seeked instead of moving
+          // focus. The seek bar invokes it; so can a custom control.
+          actions: {
+            FSeekIntent: CallbackAction<FSeekIntent>(
+              onInvoke: (intent) {
+                seekStep(intent.direction);
+                return null;
+              },
+            ),
           },
-          child: Actions(
-            actions: {
-              FSeekIntent: CallbackAction<FSeekIntent>(
-                onInvoke: (intent) {
-                  _onDirectionalSeek(intent.direction);
-                  return null;
-                },
-              ),
-            },
+          child: FTvScope(
+            isActive: isTvActive,
+            seek: seekStep,
+            commitSeek: commitSeek,
             child: widget.child,
           ),
         ),
@@ -146,9 +155,11 @@ class FTvLayerState extends State<FTvLayer> {
     return true;
   }
 
-  void _onDirectionalSeek(int direction) {
-    // Left and right are claimed by the `Shortcuts` below this widget's own Focus node, so they
-    // never reach `_onKey`. Everything a directional press implies has to happen here.
+  /// Moves the pending seek one step in [direction], accelerating over a run of presses.
+  ///
+  /// The seek bar calls this when it holds focus and a directional key arrives; nothing reaches
+  /// `_onKey` in that case, so everything a directional press implies has to happen here.
+  void seekStep(int direction) {
     if (!_sawDirectionalKey) setState(() => _sawDirectionalKey = true);
 
     if (_ui.isSettingsOpen) return;
@@ -187,6 +198,15 @@ class FTvLayerState extends State<FTvLayer> {
     });
   }
 
+  /// Sends the pending seek to the engine now, instead of waiting out the quiet time.
+  ///
+  /// This is what OK means while the seek bar is being walked: the viewer has arrived.
+  void commitSeek() {
+    _commitTimer?.cancel();
+    _repeats = 0;
+    _ui.endScrub();
+  }
+
   /// Grows every few presses so a long hold covers ground, then flattens out.
   int get _multiplier {
     if (!widget.config.seekAcceleration) return 1;
@@ -204,4 +224,41 @@ class FTvLayerState extends State<FTvLayer> {
       key == LogicalKeyboardKey.enter ||
       key == LogicalKeyboardKey.numpadEnter ||
       key == LogicalKeyboardKey.gameButtonA;
+}
+
+/// Whether a remote is driving the player, and the seek that remote performs.
+///
+/// The controls read [isActive] to lay themselves out for a D-pad — a control that costs two
+/// presses to reach and is never touched from a sofa does not belong in the row a remote has to
+/// walk. The seek bar uses [seek] and [commitSeek] so the acceleration and the deferred commit
+/// stay in one place instead of being reimplemented per control.
+class FTvScope extends InheritedWidget {
+  const FTvScope({
+    required this.isActive,
+    required this.seek,
+    required this.commitSeek,
+    required super.child,
+    super.key,
+  });
+
+  /// Whether the remote layout is in force: always in `FTvMode.enabled`, and from the first
+  /// directional press in `FTvMode.auto`.
+  final bool isActive;
+
+  /// Moves the pending seek one step: `-1` back, `1` forward.
+  ///
+  /// The preview moves at once and grows with a run of presses; the engine is told once the
+  /// presses stop, or when [commitSeek] is called.
+  final void Function(int direction) seek;
+
+  /// Commits the pending seek immediately.
+  final VoidCallback commitSeek;
+
+  /// The nearest TV layer, or null when there is none — a player with `FTvMode.disabled`, or a
+  /// control built outside `FPlayerView`.
+  static FTvScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FTvScope>();
+
+  @override
+  bool updateShouldNotify(FTvScope oldWidget) => oldWidget.isActive != isActive;
 }

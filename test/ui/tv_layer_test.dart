@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fplayer/fplayer.dart';
 
@@ -24,11 +25,28 @@ void main() {
 
   tearDown(() => controller.dispose());
 
-  Future<void> ready(WidgetTester tester, {FUiConfig config = tvConfig}) async {
+  /// Puts focus on the seek bar, which is what makes left and right mean *scrub*: everywhere
+  /// else on the chrome they walk the controls.
+  Future<void> focusSeekBar(WidgetTester tester) async {
+    final bar = tester.widget<Focus>(
+      find
+          .descendant(of: find.byType(FProgressBar), matching: find.byType(Focus))
+          .first,
+    );
+    bar.focusNode!.requestFocus();
+    await tester.pump();
+  }
+
+  Future<void> ready(
+    WidgetTester tester, {
+    FUiConfig config = tvConfig,
+    bool onSeekBar = true,
+  }) async {
     await pumpPlayer(tester, controller: controller, config: config);
     await controller.open(const FPlayerSource.network('https://example.com/a.m3u8'));
     engine.becomeReady(duration: const Duration(minutes: 10));
     await tester.pump();
+    if (onSeekBar) await focusSeekBar(tester);
   }
 
   testWidgets('the first directional press only reveals the controls', (tester) async {
@@ -44,6 +62,32 @@ void main() {
     // Revealing is the whole action: nothing was seeked.
     expect(uiOf(tester).isScrubbing, isFalse);
     expect(engine.calls.where((c) => c.startsWith('seekTo')), isEmpty);
+  });
+
+  testWidgets('left and right leave the buttons alone', (tester) async {
+    // The play button holds focus from its autofocus, and a viewer pressing right there is
+    // reaching for the next control — not asking to jump ten seconds into the film.
+    await ready(tester, onSeekBar: false);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    expect(uiOf(tester).isScrubbing, isFalse);
+    expect(engine.calls.where((c) => c.startsWith('seekTo')), isEmpty);
+  });
+
+  testWidgets('OK commits the pending seek without waiting', (tester) async {
+    await ready(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(engine.calls.where((c) => c.startsWith('seekTo')), isEmpty);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pump();
+
+    expect(engine.calls.where((c) => c.startsWith('seekTo')).length, 1);
+    expect(uiOf(tester).isScrubbing, isFalse);
   });
 
   testWidgets('right seeks forward once the controls are up', (tester) async {
@@ -152,6 +196,29 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   });
 
+  final speedButton = find.byWidgetPredicate(
+    (widget) =>
+        widget is FPlayerTextButton &&
+        widget.semanticLabel == const FPlayerLocalizations().speed,
+  );
+
+  testWidgets('the speed control is there on touch', (tester) async {
+    await ready(
+      tester,
+      config: const FUiConfig(showControlsOnStart: true),
+      onSeekBar: false,
+    );
+
+    expect(speedButton, findsOneWidget);
+  });
+
+  testWidgets('the speed control steps aside for a remote', (tester) async {
+    await ready(tester, onSeekBar: false);
+
+    // One less stop for the D-pad to walk through, for a setting nobody changes from a sofa.
+    expect(speedButton, findsNothing);
+  });
+
   testWidgets('media keys act immediately, without revealing first', (tester) async {
     await ready(tester);
     uiOf(tester).hideControls();
@@ -167,12 +234,14 @@ void main() {
     await ready(
       tester,
       config: const FUiConfig(tv: FTvConfig(mode: FTvMode.disabled)),
+      onSeekBar: false,
     );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     expect(uiOf(tester).isScrubbing, isFalse);
+    expect(engine.calls.where((c) => c.startsWith('seekTo')), isEmpty);
   });
 
   testWidgets('directional keys do not seek while the settings panel is open',

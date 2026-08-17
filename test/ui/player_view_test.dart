@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fplayer/fplayer.dart';
 
 import 'fake_engine.dart';
+import 'pump_player.dart' show tracksButton;
 
 void main() {
   late FakeEngine engine;
@@ -203,7 +204,7 @@ void main() {
     await tester.pump();
 
     // One control for both kinds of track, and no menu to walk: the list is right there.
-    await tester.tap(find.byIcon(Icons.closed_caption_off_outlined));
+    await tester.tap(tracksButton);
     await tester.pump();
     expect(find.byType(FTrackDialog), findsOneWidget);
 

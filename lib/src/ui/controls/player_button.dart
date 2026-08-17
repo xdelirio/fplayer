@@ -5,7 +5,10 @@ import '../theme.dart';
 import 'focus_highlight.dart';
 
 /// Remote OK, keyboard Enter and Space all mean "activate this".
-bool _isSelectKey(LogicalKeyboardKey key) =>
+///
+/// Shared so every control in the chrome — and any control an app builds alongside them — agrees
+/// on what counts as a press.
+bool isSelectKey(LogicalKeyboardKey key) =>
     key == LogicalKeyboardKey.select ||
     key == LogicalKeyboardKey.enter ||
     key == LogicalKeyboardKey.numpadEnter ||
@@ -105,7 +108,7 @@ class _FPlayerButtonState extends State<FPlayerButton> with FFocusHighlight {
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (!_isSelectKey(event.logicalKey)) return KeyEventResult.ignored;
+    if (!isSelectKey(event.logicalKey)) return KeyEventResult.ignored;
 
     widget.onPressed?.call();
     return KeyEventResult.handled;
@@ -119,6 +122,7 @@ class FPlayerTextButton extends StatefulWidget {
     required this.onPressed,
     required this.theme,
     this.semanticLabel,
+    this.isActive = false,
     this.focusNode,
     super.key,
   });
@@ -127,6 +131,10 @@ class FPlayerTextButton extends StatefulWidget {
   final VoidCallback? onPressed;
   final FPlayerTheme theme;
   final String? semanticLabel;
+
+  /// Tints the label with the accent colour, for a control whose setting is currently on.
+  final bool isActive;
+
   final FocusNode? focusNode;
 
   @override
@@ -148,7 +156,7 @@ class _FPlayerTextButtonState extends State<FPlayerTextButton> with FFocusHighli
         canRequestFocus: isEnabled,
         onFocusChange: onFocusChanged,
         onKeyEvent: (node, event) {
-          if (event is KeyDownEvent && _isSelectKey(event.logicalKey)) {
+          if (event is KeyDownEvent && isSelectKey(event.logicalKey)) {
             widget.onPressed?.call();
             return KeyEventResult.handled;
           }
@@ -176,7 +184,11 @@ class _FPlayerTextButtonState extends State<FPlayerTextButton> with FFocusHighli
             child: Text(
               widget.label,
               style: theme.labelStyle.copyWith(
-                color: isEnabled ? theme.foreground : theme.disabledForeground,
+                color: !isEnabled
+                    ? theme.disabledForeground
+                    : widget.isActive
+                        ? theme.accent
+                        : theme.foreground,
               ),
             ),
           ),

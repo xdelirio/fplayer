@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fplayer/fplayer.dart';
@@ -66,7 +65,7 @@ void main() {
     engine.emit(const FEngineTracksChanged(tracks));
     await tester.pump();
 
-    await tester.tap(find.byIcon(Icons.closed_caption_off_outlined));
+    await tester.tap(tracksButton);
     await tester.pump();
   }
 

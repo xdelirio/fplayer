@@ -23,7 +23,8 @@ class FPlayerLocalizations {
     this.settings = 'Settings',
     this.audio = 'Audio',
     this.subtitles = 'Subtitles',
-    this.audioAndSubtitles = 'Audio & subtitles',
+    this.audioAndSubtitles = 'Audio & Subtitles',
+    this.audioAndSubsShort = 'Audio & Subs',
     this.quality = 'Quality',
     this.speed = 'Speed',
     this.off = 'Off',
@@ -70,7 +71,8 @@ class FPlayerLocalizations {
           settings: 'Ajustes',
           audio: 'Audio',
           subtitles: 'Subtítulos',
-          audioAndSubtitles: 'Audio y subtítulos',
+          audioAndSubtitles: 'Audio & Subtítulos',
+          audioAndSubsShort: 'Audio & Subs',
           quality: 'Calidad',
           speed: 'Velocidad',
           off: 'Desactivados',
@@ -119,6 +121,9 @@ class FPlayerLocalizations {
 
   /// Title of the dialog that holds both, and the label of the control that opens it.
   final String audioAndSubtitles;
+
+  /// The same control on a narrow player, where the full name would push the row off screen.
+  final String audioAndSubsShort;
   final String quality;
   final String speed;
 
@@ -175,6 +180,7 @@ class FPlayerLocalizations {
     String? audio,
     String? subtitles,
     String? audioAndSubtitles,
+    String? audioAndSubsShort,
     String? quality,
     String? speed,
     String? off,
@@ -219,6 +225,7 @@ class FPlayerLocalizations {
         audio: audio ?? this.audio,
         subtitles: subtitles ?? this.subtitles,
         audioAndSubtitles: audioAndSubtitles ?? this.audioAndSubtitles,
+        audioAndSubsShort: audioAndSubsShort ?? this.audioAndSubsShort,
         quality: quality ?? this.quality,
         speed: speed ?? this.speed,
         off: off ?? this.off,

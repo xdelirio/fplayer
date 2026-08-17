@@ -46,6 +46,16 @@ Future<void> pumpPlayer(
   await tester.pump();
 }
 
+/// The control that opens the audio and subtitles dialog.
+///
+/// Found by what it does rather than by its text: the label shortens on a narrow player, and the
+/// tests that care about that are not the ones tapping it.
+final Finder tracksButton = find.byWidgetPredicate(
+  (widget) =>
+      widget is FPlayerTextButton &&
+      widget.semanticLabel == const FPlayerLocalizations().audioAndSubtitles,
+);
+
 /// The view's own state, for asserting on chrome behaviour.
 FPlayerUi uiOf(WidgetTester tester) =>
     tester.state<State<FPlayerView>>(find.byType(FPlayerView)) as FPlayerUi;

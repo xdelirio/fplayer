@@ -62,6 +62,6 @@ export 'src/ui/player_view.dart';
 export 'src/ui/subtitle_view.dart';
 export 'src/ui/theme.dart';
 export 'src/ui/time_format.dart';
-export 'src/ui/tv/tv_layer.dart' show FSeekIntent, FTvLayer;
+export 'src/ui/tv/tv_layer.dart' show FSeekIntent, FTvLayer, FTvScope;
 export 'src/ui/video_fit.dart';
 export 'src/ui/video_surface.dart';

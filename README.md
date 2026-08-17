@@ -103,9 +103,9 @@ If you would rather build it from scratch, the layers are available on their own
 
 | | |
 |---|---|
-| `showAudioSubtitlesButton` | opens both track lists side by side; hidden when there is nothing to pick |
+| `showAudioSubtitlesButton` | reads `Audio & Subtitles`, opens both track lists side by side; hidden when there is nothing to pick |
 | `showQualityButton` | reads `Auto · 1080p`, opens the ladder; only on adaptive media with more than one rung |
-| `showSpeedButton` | reads `1x`, opens the speeds as pills |
+| `showSpeedButton` | reads `1x`, opens the speeds as pills. Dropped under a remote, where the settings panel carries it instead |
 | `showMuteButton`, `showFitButton`, `showFullscreenButton` | |
 | `showSettingsButton` | the catch-all panel. Off on touch, on for `FUiConfig.tv()` |
 
@@ -142,9 +142,9 @@ FUiConfig(tv: FTvConfig(mode: FTvMode.auto))   // the default
 
 `auto` changes nothing until the first directional key arrives; from then on the focus ring appears and the remote is in charge. A TV-only build uses `FTvMode.enabled` and `FPlayerTheme.tv()`.
 
-- **←/→** seek, accelerating the longer you hold, and the engine receives a single seek when you stop. The preview moves immediately.
+- **←/→** seek **while the seek bar holds focus**, accelerating the longer you hold, and the engine receives a single seek when you stop. The preview moves immediately. Anywhere else on the chrome they do what they do in every other app: move to the control next door.
 - **↑/↓** move focus between rows of controls.
-- **OK** activates the focused control; the first press with the controls hidden only reveals them.
+- **OK** activates the focused control, or commits the seek in progress without waiting; the first press with the controls hidden only reveals them.
 - **Back** closes the settings panel, then the controls, and only then exits.
 - **Media keys** always act, without revealing anything first.
 

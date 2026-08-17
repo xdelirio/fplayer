@@ -12,7 +12,9 @@ A chrome that gets out of the way, and controls where you can see them.
 - **`showIdleProgressBar`**: a hairline of progress along the bottom edge while the controls are away, so the one thing worth knowing without asking is on screen.
 - **`FPlayerPanel`** with `openPanel` / `closePanel` / `panel` on `FPlayerUi`, for opening the same panels from your own controls.
 - `FPlayerTheme.menuWidth`, and the panel chrome (`FPanelSheet`, `FPanelOptionRow`, `FPanelHeader`, …) as reusable pieces.
-- `FPlayerLocalizations.audioAndSubtitles` and `.seconds`.
+- `FPlayerLocalizations.audioAndSubtitles`, `.audioAndSubsShort` and `.seconds`.
+- **`FTvScope`**: whether a remote is driving the player, and the seek it performs, readable from any control under `FPlayerView`. It is how the chrome lays itself out for a D-pad, and how a custom seek bar gets the same accelerated, deferred seek as the bundled one.
+- **The seek bar takes focus**, with a thicker track and a halo on the thumb to say so. It was the one control a remote could not see itself land on.
 
 ### Changed
 
@@ -20,8 +22,13 @@ A chrome that gets out of the way, and controls where you can see them.
 - **The double-tap seek looks like the players people already use**: a half-screen ripple with a curved inner edge, three chevrons travelling in the direction of travel, and a count that keeps climbing while taps land — and once it is up, single taps on the same side add another step.
 - **The settings panel was rebuilt**: frosted surface, rounded rows, a real hierarchy, one level of depth, speeds as pills, and a scrim that dismisses on a tap outside. It is off by default on touch, where the bottom bar covers the same ground in one tap; `FUiConfig.tv()` turns it back on, because a row of small targets is worse to walk with a D-pad than one list.
 - `showSettingsButton` now defaults to false. `isSettingsOpen` means "any panel is open".
+- **The audio and subtitles control is named rather than drawn.** `Audio & Subtitles` — `Audio & Subs` where the row is tight — instead of a `CC` glyph: the control picks a language as often as it turns subtitles on, and no icon says that. It tints with the accent colour while a subtitle track is on.
+- **No speed control under a remote.** It was one more stop for the D-pad to walk through on the way to anything else, for a setting nobody changes from a sofa. The settings panel still carries it.
+- **The bottom row scrolls instead of overflowing.** With every control turned on, a named track button and a quality summary are wider than a 360-wide phone.
 
 ### Fixed
+
+- **Left and right no longer seek from wherever focus happens to be.** They were claimed for the whole player, so a remote trying to reach the next control scrubbed the film instead — the bug was visible on every button in the bottom row. Seeking is now what the seek bar does with them while it holds focus; everywhere else they move focus, and **OK** on the bar commits the seek without waiting out the quiet time.
 
 - **The chrome no longer inherits Flutter's error text style** — yellow, underlined, monospaced — when it sits in a route with no Material ancestor. The fullscreen route is exactly such a route, so every label in it was painted that way. The view now supplies its own text baseline.
 
