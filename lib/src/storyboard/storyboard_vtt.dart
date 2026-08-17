@@ -158,6 +158,11 @@ Duration? _parseTimestamp(String raw) {
 /// Recognises the Media Fragments `xywh` dimension, with or without the `pixel:` prefix. A
 /// fragment in any other form is left on the URL rather than discarded — it may be meaningful to
 /// whatever serves the image.
+/// A fragment that names a region is stripped from the URL whether or not it could be parsed:
+/// the URL is what the sprite cache keys on, and a fragment that differs per cue turns every one
+/// of a two-hour film's cues into its own cache entry — a fetch and a decode per pointer move,
+/// for the same sheet. A fragment that means something else is left alone, as it may matter to
+/// whatever serves the image.
 (String, Rect?) _splitFragment(String payload) {
   final hash = payload.lastIndexOf('#');
   if (hash < 0) return (payload, null);
@@ -166,10 +171,15 @@ Duration? _parseTimestamp(String raw) {
   final withoutFragment = payload.substring(0, hash);
 
   const key = 'xywh=';
-  final keyIndex = fragment.indexOf(key);
-  if (keyIndex != 0) return (payload, null);
+  // Media Fragments joins dimensions with `&`, so the region can arrive next to a `t=` range
+  // rather than alone.
+  final part = fragment
+      .split('&')
+      .where((component) => component.startsWith(key))
+      .firstOrNull;
+  if (part == null) return (payload, null);
 
-  var value = fragment.substring(key.length);
+  var value = part.substring(key.length);
   if (value.startsWith('pixel:')) {
     value = value.substring('pixel:'.length);
     // Percentage regions cannot be resolved before the sheet is decoded, so they are treated as
@@ -179,12 +189,12 @@ Duration? _parseTimestamp(String raw) {
   }
 
   final numbers = value.split(',');
-  if (numbers.length != 4) return (payload, null);
+  if (numbers.length != 4) return (withoutFragment, null);
 
   final parsed = <double>[];
   for (final number in numbers) {
     final component = double.tryParse(number.trim());
-    if (component == null) return (payload, null);
+    if (component == null) return (withoutFragment, null);
     parsed.add(component);
   }
 

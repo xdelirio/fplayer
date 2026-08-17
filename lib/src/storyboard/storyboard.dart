@@ -90,9 +90,13 @@ class FStoryboard {
   /// Distinct image files this storyboard draws from, in first-use order.
   ///
   /// Useful for warming a cache: a whole storyboard usually resolves to a handful of sheets.
-  Iterable<String> get imageUrls {
+  ///
+  /// Built eagerly. As a lazy `where` over a set that the closure fills in, the first iteration
+  /// consumed the deduplication and every one after it came back empty — so `final urls = …;
+  /// if (urls.isNotEmpty) prefetch(urls);` prefetched nothing.
+  List<String> get imageUrls {
     final seen = <String>{};
-    return frames.map((f) => f.url).where(seen.add);
+    return List<String>.unmodifiable(frames.map((f) => f.url).where(seen.add));
   }
 
   /// The thumbnail to show for [position].

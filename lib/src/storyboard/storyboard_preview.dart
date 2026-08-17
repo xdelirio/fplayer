@@ -129,6 +129,12 @@ class _FStoryboardPreviewState extends State<FStoryboardPreview> {
 
     _releaseImage();
 
+    // Any load still in flight is for a sheet nobody is looking at now. Retiring its token here
+    // rather than only when a new load starts is what keeps a late arrival from replacing the
+    // sheet a cache hit already installed — which left the preview showing a placeholder while
+    // holding the right image, until the viewer happened to move to another frame.
+    final token = ++_request;
+
     final cached = widget.controller.peekImage(frame);
     if (cached != null) {
       _image = cached;
@@ -139,7 +145,6 @@ class _FStoryboardPreviewState extends State<FStoryboardPreview> {
 
     _rebuild();
 
-    final token = ++_request;
     unawaited(
       widget.controller.imageFor(frame).then((image) {
         if (!mounted || token != _request) {

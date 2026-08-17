@@ -71,17 +71,31 @@ class FSpriteCache {
     if (cached != null) return Future<ui.Image?>.value(cached);
 
     final inFlight = _pending[url];
-    if (inFlight != null) return inFlight.then((image) => image?.clone());
+    // A waiter on someone else's fetch gets its own clone from the cache rather than from the
+    // shared future's value: by the time it resolves, that image may have been evicted and
+    // disposed, and cloning a disposed image throws.
+    if (inFlight != null) return inFlight.then((_) => peek(url));
 
-    final request = _fetchAndDecode(url, headers).whenComplete(() => _pending.remove(url));
+    // Statement body, deliberately. As an expression it *returns* the removed future — which is
+    // this very future — and `whenComplete` chains on whatever its callback returns, so the
+    // request ended up waiting on itself and never completed. Every first load of every sheet
+    // hung, and `prefetch` deadlocked whatever awaited it.
+    final request = _fetchAndDecode(url, headers).whenComplete(() {
+      _pending.remove(url);
+    });
     _pending[url] = request;
-    return request.then((image) => image?.clone());
+    return request;
   }
 
+  /// Fetches, decodes and stores [url], returning a clone for the caller.
   Future<ui.Image?> _fetchAndDecode(String url, Map<String, String> headers) async {
     Uint8List bytes;
     try {
-      _client ??= _httpClient ?? HttpClient();
+      // Only a remote sheet needs a client. A downloaded storyboard is read from disk, and
+      // allocating an `HttpClient` it will never use leaves one open for the cache's lifetime.
+      if (!url.startsWith('file:') && !url.startsWith('/')) {
+        _client ??= _httpClient ?? HttpClient();
+      }
       bytes = await fetchStoryboardBytes(url, headers: headers, client: _client);
     } on FStoryboardException {
       return null;
@@ -99,12 +113,21 @@ class FSpriteCache {
       return null;
     }
 
+    // Cloned here, in the same turn as the store: a clone taken later can find the entry already
+    // evicted and its image disposed, and `clone()` on a disposed image throws rather than
+    // returning null.
+    final owned = image.clone();
     _store(url, image);
-    return image;
+    return owned;
   }
 
   void _store(String url, ui.Image image) {
-    _entries.remove(url)?.release();
+    final previous = _entries.remove(url);
+    if (previous != null) {
+      _bytes -= previous.bytes;
+      previous.release();
+    }
+
     final entry = _Entry(image);
     _entries[url] = entry;
     _bytes += entry.bytes;
