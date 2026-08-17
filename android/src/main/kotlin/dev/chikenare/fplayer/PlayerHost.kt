@@ -277,6 +277,9 @@ internal class PlayerHost(
             "stop" -> {
                 player.stop()
                 player.clearMediaItems()
+                // Forgotten with the media: a later `addSubtitle` rebuilds from this, and would
+                // otherwise re-prepare the source the app just stopped.
+                currentSource = null
                 hasReportedInitialized = false
                 result.success(null)
             }
@@ -333,7 +336,11 @@ internal class PlayerHost(
 
             "selectTrack" -> {
                 val trackType = TrackController.trackTypeOf(call.argument<String>("type"))
-                tracks.select(trackType, call.argument<String>("id"))
+                val id = call.argument<String>("id")
+                if (!tracks.select(trackType, id)) {
+                    result.error(ErrorCodes.BAD_ARGUMENT, "No such track: $id", null)
+                    return
+                }
                 emitTracks()
                 result.success(null)
             }

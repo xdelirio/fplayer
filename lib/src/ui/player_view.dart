@@ -161,6 +161,9 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   /// Whether this view has already popped its own fullscreen route.
   bool _hasLeftFullscreen = false;
 
+  /// Whether a fullscreen route is being pushed, so a second press cannot push another.
+  bool _isEnteringFullscreen = false;
+
   @override
   void initState() {
     super.initState();
@@ -341,6 +344,10 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
       _leaveFullscreen();
       return;
     }
+    // Two presses inside the route transition would otherwise push two fullscreen copies of the
+    // same player, and the viewer would have to leave twice.
+    if (_isEnteringFullscreen) return;
+    _isEnteringFullscreen = true;
 
     final fullscreen = widget.fullscreen;
     final navigator = Navigator.of(context);
@@ -364,6 +371,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
       ),
     );
 
+    _isEnteringFullscreen = false;
     unawaited(SystemChrome.setPreferredOrientations(fullscreen.restoreOrientations));
     unawaited(SystemChrome.setEnabledSystemUIMode(fullscreen.restoreSystemUiMode));
     widget.onFullscreenChanged?.call(false);

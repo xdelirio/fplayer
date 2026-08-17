@@ -124,9 +124,14 @@ class FStoryboardController extends ChangeNotifier {
   /// One sheet usually covers several minutes of media, so the default is enough for the start of
   /// playback; raise it if your scrubber is used to jump far ahead immediately.
   Future<void> prefetch({int limit = 1}) async {
-    final urls = _storyboard.imageUrls.take(limit);
-    for (final url in urls) {
-      final image = await _cache.load(url, headers: _source?.headers ?? const {});
+    // Guarded like `load`: warming is slow, and a source change or a disposal partway through
+    // means these sheets are for a storyboard nobody is looking at any more.
+    final generation = _generation;
+    final headers = _source?.headers ?? const <String, String>{};
+
+    for (final url in _storyboard.imageUrls.take(limit)) {
+      if (_isDisposed || generation != _generation) return;
+      final image = await _cache.load(url, headers: headers);
       // Warming only needs the cache populated; the clone handed back here is ours to release.
       image?.dispose();
     }

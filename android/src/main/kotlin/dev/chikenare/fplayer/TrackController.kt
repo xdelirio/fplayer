@@ -87,10 +87,16 @@ internal class TrackController(
      * For text, "no override" means off rather than automatic: showing subtitles is a deliberate
      * act, and a viewer who turned them off should not get them back on the next quality switch.
      */
+    /**
+     * Applies a selection, answering whether [id] resolved to a track.
+     *
+     * An id from a stale track list — or from before any list arrived — used to be swallowed and
+     * reported as a success, which is indistinguishable from a device that simply refused it.
+     */
     fun select(
         trackType: Int,
         id: String?,
-    ) {
+    ): Boolean {
         val builder = trackSelector.buildUponParameters()
 
         if (id == null) {
@@ -99,7 +105,7 @@ internal class TrackController(
                 builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             }
         } else {
-            val (group, trackIndex) = byId[id] ?: return
+            val (group, trackIndex) = byId[id] ?: return false
             builder.setOverrideForType(TrackSelectionOverride(group, trackIndex))
             if (trackType == C.TRACK_TYPE_TEXT) {
                 builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -107,6 +113,7 @@ internal class TrackController(
         }
 
         trackSelector.setParameters(builder)
+        return true
     }
 
     /**
