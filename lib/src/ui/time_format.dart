@@ -6,7 +6,10 @@
 /// as the position crosses the hour.
 String formatMediaTime(Duration value, {Duration? reference}) {
   final total = value.isNegative ? Duration.zero : value;
-  final scale = reference ?? total;
+  // The longer of the two decides the shape. A container whose declared duration under-reports —
+  // VBR in a container, a manifest rounding down — would otherwise drop the hour from a position
+  // past it and show `0:05` for `1:00:05`.
+  final scale = reference == null || reference < total ? total : reference;
 
   final hours = total.inHours;
   final minutes = total.inMinutes.remainder(60);

@@ -36,7 +36,9 @@ Future<Uint8List> fetchStoryboardBytes(
   }
 
   final ownsClient = client == null;
-  final http = client ?? HttpClient();
+  // A host that accepts the connection and never answers must not leave the scrub preview
+  // blank forever with no error to show for it.
+  final http = client ?? (HttpClient()..connectionTimeout = const Duration(seconds: 15));
   try {
     final request = await http.getUrl(parsed);
     headers.forEach(request.headers.set);

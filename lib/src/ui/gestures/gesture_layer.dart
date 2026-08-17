@@ -46,6 +46,9 @@ class _FGestureLayerState extends State<FGestureLayer> {
   /// left. Decided once per gesture, in [_onScaleStart].
   bool _isRightHalf = false;
 
+  /// Counts gestures, so an answer that lands after one ended is not applied to the next.
+  int _gestureId = 0;
+
   bool? _isSeekingForward;
   int _seekSteps = 0;
   Timer? _seekTimer;
@@ -211,9 +214,15 @@ class _FGestureLayerState extends State<FGestureLayer> {
     // that drifts past the middle would otherwise turn into a brightness swipe halfway through,
     // leaving the volume stuck at whatever it had reached and dimming the screen instead.
     _isRightHalf = details.localFocalPoint.dx > constraints.maxWidth / 2;
-    // Read once per gesture: the starting point has to be whatever the window is at, or the first
-    // drag jumps from the system's brightness to whatever the maths computed from zero.
-    unawaited(_ui.controller.brightness().then((value) => _brightnessOrigin = value));
+    // Read once per gesture, and adopted only while that gesture is still the current one: the
+    // platform answers a frame or two later, and a late answer used to overwrite the origin of
+    // the *next* drag with the previous one's starting point.
+    final gesture = ++_gestureId;
+    unawaited(
+      _ui.controller.brightness().then((value) {
+        if (mounted && gesture == _gestureId) _brightnessOrigin = value;
+      }),
+    );
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details, BoxConstraints constraints) {

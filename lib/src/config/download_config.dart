@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'network_config.dart';
+
 /// Conditions that must hold before a download will run.
 ///
 /// Enforced by the platform, not by the app: a download waiting on Wi-Fi resumes on its own when
@@ -84,6 +86,7 @@ class FDownloadConfig {
     this.notification = const FDownloadNotificationConfig(),
     this.directoryName = 'fplayer_downloads',
     this.progressInterval = const Duration(seconds: 1),
+    this.network = const FNetworkConfig(),
   });
 
   /// How many downloads transfer at once.
@@ -111,6 +114,13 @@ class FDownloadConfig {
   /// polling. One second is smooth enough for a progress bar and cheap.
   final Duration progressInterval;
 
+  /// How the queue fetches: user agent, timeouts, redirects.
+  ///
+  /// Separate from the player's, because it is separate on the platform — but set it to the same
+  /// value unless you have a reason not to. A CDN that keys on `User-Agent` answers 403 to every
+  /// download while streaming the same media works, and that is a confusing afternoon.
+  final FNetworkConfig network;
+
   FDownloadConfig copyWith({
     int? maxParallelDownloads,
     int? minRetryCount,
@@ -118,6 +128,7 @@ class FDownloadConfig {
     FDownloadNotificationConfig? notification,
     String? directoryName,
     Duration? progressInterval,
+    FNetworkConfig? network,
   }) =>
       FDownloadConfig(
         maxParallelDownloads: maxParallelDownloads ?? this.maxParallelDownloads,
@@ -126,9 +137,14 @@ class FDownloadConfig {
         notification: notification ?? this.notification,
         directoryName: directoryName ?? this.directoryName,
         progressInterval: progressInterval ?? this.progressInterval,
+        network: network ?? this.network,
       );
 
   Map<String, Object?> toMap() => {
+        // Downloads fetch with the same user agent and timeouts as playback: a CDN that keys on
+        // User-Agent otherwise answers 403 to every download while streaming the same media
+        // works.
+        'network': network.toMap(),
         'maxParallelDownloads': maxParallelDownloads,
         'minRetryCount': minRetryCount,
         'requirements': requirements.toMap(),

@@ -162,8 +162,28 @@ internal object DownloadStore {
      * Headers travel with each download rather than being set on the factory, because one queue
      * serves sources from different hosts with different credentials.
      */
+    /**
+     * The network settings downloads fetch with.
+     *
+     * Read from the same `network` config playback uses. A bare factory ignored the app's user
+     * agent and timeouts, so a CDN that keys on User-Agent answered 403 to every download while
+     * streaming the same media worked.
+     */
     fun networkDataSourceFactory(): DataSource.Factory {
-        val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+        val network = configuration.map("network")
+        val http =
+            DefaultHttpDataSource
+                .Factory()
+                .setUserAgent(network.string("userAgent"))
+                .setAllowCrossProtocolRedirects(
+                    network.bool("allowCrossProtocolRedirects") ?: true,
+                ).setConnectTimeoutMs(
+                    network.int("connectTimeoutMs")
+                        ?: DefaultHttpDataSource.DEFAULT_CONNECT_TIMEOUT_MILLIS,
+                ).setReadTimeoutMs(
+                    network.int("readTimeoutMs")
+                        ?: DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS,
+                )
 
         return ResolvingDataSource.Factory(http) { dataSpec ->
             val headers = DownloadHeaders.forUri(dataSpec.uri.toString())

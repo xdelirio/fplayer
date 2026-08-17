@@ -13,8 +13,8 @@ enum FSourceKind { network, file, asset }
 
 /// An external subtitle track supplied by the app.
 ///
-/// Wired into playback in phase 2; the model is defined here so [FPlayerSource] has its final
-/// shape from the start.
+/// Side-loaded rather than muxed: the player fetches it separately and renders it in Flutter, so
+/// it can carry its own headers and outlive a source change.
 @immutable
 class FSubtitleSource {
   const FSubtitleSource.network(
@@ -68,7 +68,8 @@ class FSubtitleSource {
 
 /// Thumbnail track used to preview frames while scrubbing.
 ///
-/// Parsed and rendered in phase 6.
+/// A WebVTT index whose cues point into sprite sheets, which is how every player that shows a
+/// preview above the seek bar does it.
 @immutable
 class FStoryboardSource {
   /// WebVTT index whose cues point at sprite sheets, optionally with `#xywh=` fragments.
@@ -308,6 +309,39 @@ class FPlayerSource {
         'isLive': isLive,
         'subtitles': subtitles.map((s) => s.toMap()).toList(),
       };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FPlayerSource &&
+          other.uri == uri &&
+          other.kind == kind &&
+          other.type == type &&
+          other.title == title &&
+          other.subtitle == subtitle &&
+          other.posterUrl == posterUrl &&
+          other.startAt == startAt &&
+          other.isLive == isLive &&
+          other.package == package &&
+          mapEquals(other.headers, headers) &&
+          listEquals(other.subtitles, subtitles) &&
+          listEquals(other.chapters, chapters);
+
+  @override
+  int get hashCode => Object.hash(
+        uri,
+        kind,
+        type,
+        title,
+        subtitle,
+        posterUrl,
+        startAt,
+        isLive,
+        package,
+        Object.hashAll(headers.entries.map((e) => Object.hash(e.key, e.value))),
+        Object.hashAll(subtitles),
+        Object.hashAll(chapters),
+      );
 
   @override
   String toString() => 'FPlayerSource.${kind.name}($uri)';

@@ -34,7 +34,15 @@ class FplayerPlugin :
     private var downloads: DownloadBridge? = null
     private var activityBinding: ActivityPluginBinding? = null
     private val players = mutableMapOf<Long, PlayerHost>()
-    private var nextPlayerId = 1L
+    /**
+     * Process-wide, not per plugin instance.
+     *
+     * The media session registry and Media3's own session map are statics, and the session id is
+     * built from this: a second Flutter engine starting again at 1 collided with the first
+     * engine's player, which made `MediaSession.Builder.build()` throw and left that player
+     * silently without a session.
+     */
+    private val nextPlayerId = java.util.concurrent.atomic.AtomicLong(1)
 
     private val userLeaveHintListener =
         PluginRegistry.UserLeaveHintListener { players.values.forEach(PlayerHost::onUserLeaveHint) }
@@ -125,7 +133,7 @@ class FplayerPlugin :
         when (call.method) {
             "create" -> {
                 try {
-                    val playerId = nextPlayerId++
+                    val playerId = nextPlayerId.getAndIncrement()
                     val host =
                         PlayerHost(
                             context = pluginBinding.applicationContext,

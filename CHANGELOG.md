@@ -1,5 +1,119 @@
 # Changelog
 
+## 0.7.0
+
+A hardening release. Two review passes over the whole package — one hunting
+leaks and bugs, one attacking the fixes from the first — plus verification on a
+phone and an Android TV emulator. Nothing here is a new feature; all of it is
+something that was wrong.
+
+### Fixed — leaks
+
+- **A player disposed while it was still being created leaked the native
+  player.** The engine marked itself disposed with no id to release, and the
+  creation that landed a moment later allocated an ExoPlayer, a texture, a
+  progress ticker and an event subscription that nothing owned. Ten open/close
+  cycles left ten players ticking. The creation is now held so disposal can wait
+  for the thing it has to release.
+- **`initialize()` called twice registered the controller with the binding
+  twice**, and the binding only ever removes one observer — which pinned the
+  controller, its engine and its whole value graph for the life of the process.
+  The documented `initialize(); open();` pattern from an `initState` did exactly
+  that. Concurrent calls now share one creation; so do `FDownloadManager` and the
+  telemetry reporter, which had the same shape.
+- **Disposal completes even when a step throws.** A `MissingPluginException` on
+  the way out is ordinary while the engine detaches, and it was enough to leave a
+  notifier and two stream controllers behind.
+- **PiP auto-enter was armed on the Activity and never disarmed**, so closing a
+  video left the app shrinking into an empty PiP window on every Home press for
+  the rest of the Activity's life.
+- **A half-built `PlayerHost` leaked everything it had already allocated** — a
+  texture, an ExoPlayer, a process-wide MediaSession and a started foreground
+  service. A negative `minBufferMs` was enough to trigger it.
+- The media service is stopped when the last session goes, the queued event sink
+  is bounded, a failed download-store initialisation releases the cache lock it
+  took, and download headers are forgotten by the URI they were registered under
+  rather than accumulating for the life of the process.
+
+### Fixed — things that did not work
+
+- **The controls never auto-hid while playing.** The countdown was restarted on
+  every controller notification, and the engine reports progress four times a
+  second, so it could never fire.
+- **The exit-fullscreen and back controls could not leave fullscreen.** Both went
+  through `maybePop`, which the `PopScope` that makes the remote's back key close
+  the chrome first vetoes — and those controls are only reachable with the chrome
+  open. `exitOnComplete` had the same problem.
+- **Left and right seeked from wherever focus happened to be**, so a remote
+  trying to reach the next control scrubbed the film instead. Seeking is now what
+  the seek bar does with those keys while it holds focus.
+- **Every panel row, speed chip, skip-intro and up-next card was focusable but
+  inert**: a bare `Focus` answers no key, so a remote could walk to them and OK
+  did nothing. Panels also take focus when they open instead of leaving it on the
+  chrome behind the scrim.
+- **Storyboard thumbnails never appeared.** `whenComplete(() => map.remove(k))`
+  returned the future it had just removed — itself — so every first load of every
+  sheet waited on itself forever and `prefetch()` deadlocked its caller.
+- **One volume or brightness swipe left a percentage badge parked mid-picture**
+  for the rest of the film, and a hold interrupted by the view going away left
+  playback at 2× with no gesture to undo it.
+- **A player that could not be created was a permanent spinner**: the retry
+  ladder re-prepared an engine that did not exist. Failures from `create` and
+  `setSource` now become the error state, and a retry rebuilds the player.
+- Telemetry lost delivered batches whenever events arrived during a flush; an
+  expired token discarded the batch instead of retrying with a fresh one.
+- A downloaded item lost its title, artwork, side-loaded subtitles and DRM
+  configuration; background playback had nothing keeping the CPU awake; and
+  quality changes were never emitted at all.
+
+### Fixed — behaviour
+
+- The playhead no longer rubber-bands when a progress tick from before a seek
+  arrives after it, and unmuting restores the level a gesture dragged to zero
+  from rather than jumping to full.
+- The centre transport scales down instead of overflowing on a narrow player, the
+  bottom row scrolls instead of overflowing, and neither the error view nor the
+  spinner shares its space with the play button any more.
+- Positioned WebVTT cues stay inside the picture, and a platform cue with no
+  anchor is centred like an ordinary subtitle instead of running rightwards from
+  the middle.
+- `FPlayerValue` and `FPlayerSource` compare by value, so the chrome is not
+  rebuilt four times a second by ticks that change nothing — and a manifest
+  refresh carrying better track labels is no longer discarded.
+- Watching the same video again starts a new analytics session; replays used to
+  be invisible.
+
+### Changed
+
+- **The audio and subtitles control is named rather than drawn**: `Audio &
+  Subtitles`, or `Audio & Subs` where the row is tight, instead of a `CC` glyph
+  that said nothing about picking a language.
+- **No speed control under a remote**, where it is one more stop for the D-pad on
+  the way to anything else. The settings panel still carries it.
+- **The focus ring is on from the first frame in a leanback build.** Flutter
+  starts Android in touch-highlight mode, so a remote-only screen showed no focus
+  at all until the first key press — one press too late.
+- `FPlayerController(engine:)` and `FDownloadManager(platform:)` are public
+  rather than `@visibleForTesting`: installing an engine is the documented way to
+  use another backend, and the annotation made every consumer doing it fail their
+  own analysis.
+- `FDownloadConfig.network` — downloads fetch with the app's user agent and
+  timeouts, like playback does.
+- `FFullscreenConfig.restoreSystemUiMode`, so leaving fullscreen restores the
+  app's own system-bar mode instead of forcing `edgeToEdge`.
+- `FPlayerUi.cancelScrub()`, for a gesture the system took away.
+- `FTvScope` publishes whether a remote is driving the player, and the seek it
+  performs, to any control under `FPlayerView`.
+- `FPlayerLocalizations.audioAndSubsShort`.
+
+### Added
+
+- `example/lib/tv_demo.dart`: the leanback layout, full screen, driven entirely
+  by a D-pad. Nothing in the example exercised TV before.
+- `LICENSE` — MIT, which is what the README always said.
+- Tests for the paths that had none: controller lifetime and failure handling,
+  the sprite cache, chrome behaviour under a remote, and the engine handoff.
+
 ## 0.6.0
 
 A chrome that gets out of the way, and controls where you can see them.
