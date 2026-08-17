@@ -58,21 +58,38 @@ class FTelemetryReporter extends FPlayerObserver {
   /// Events queued so far. Exposed for tests and for a diagnostics screen.
   int get queuedCount => _queue?.length ?? 0;
 
+  /// The start in flight, shared by every concurrent caller.
+  Future<void>? _starting;
+
+  /// The flush in flight, so disposal can wait for it instead of stepping around it.
+  Future<void>? _flushing;
+
   /// Loads anything a previous run left behind and starts the flush loop.
-  Future<void> start() async {
-    if (!config.enabled || _isDisposed) return;
+  Future<void> start() {
+    if (!config.enabled || _isDisposed) return Future<void>.value();
+    // Shared rather than re-entered: the null check sits before an await, so two overlapping
+    // calls both built a queue over the same file, each with its own write chain — interleaved
+    // appends and duelling rewrites of one JSONL.
+    return _starting ??= _start();
+  }
 
-    _queue ??= FTelemetryQueue(
-      file: _explicitQueueFile ?? await _defaultQueueFile(),
-      maxEntries: config.maxQueuedEvents,
-    );
-    await _queue!.load();
+  Future<void> _start() async {
+    try {
+      _queue ??= FTelemetryQueue(
+        file: _explicitQueueFile ?? await _defaultQueueFile(),
+        maxEntries: config.maxQueuedEvents,
+      );
+      await _queue!.load();
+      if (_isDisposed) return;
 
-    _flushTimer?.cancel();
-    _flushTimer = Timer.periodic(config.flushInterval, (_) => unawaited(flush()));
+      _flushTimer?.cancel();
+      _flushTimer = Timer.periodic(config.flushInterval, (_) => unawaited(flush()));
 
-    // Whatever survived the last run goes out immediately; it is already late.
-    unawaited(flush());
+      // Whatever survived the last run goes out immediately; it is already late.
+      unawaited(flush());
+    } finally {
+      _starting = null;
+    }
   }
 
   // region Observations
@@ -170,16 +187,23 @@ class FTelemetryReporter extends FPlayerObserver {
     final queue = _queue;
     if (!config.enabled || _isDisposed || queue == null || _isFlushing) return;
 
+    return _flushing = _flush(queue);
+  }
+
+  Future<void> _flush(FTelemetryQueue queue) async {
     _isFlushing = true;
     try {
       while (!queue.isEmpty && !_isDisposed) {
         final batch = queue.peek(config.maxBatchSize);
+        // Taken before the send, so records evicted from the front while the batch is on the
+        // wire shift the removal rather than making it delete past the batch.
+        final cursor = queue.cursorAfter(batch.length);
         final delivery = await _client.send(batch);
 
         switch (delivery.status) {
           case FTelemetryDeliveryStatus.delivered:
           case FTelemetryDeliveryStatus.dropped:
-            queue.remove(batch.length);
+            queue.removeThrough(cursor);
             _failedAttempts = 0;
           case FTelemetryDeliveryStatus.retry:
             _scheduleRetry(delivery.retryAfter);
@@ -188,10 +212,15 @@ class FTelemetryReporter extends FPlayerObserver {
       }
     } finally {
       _isFlushing = false;
+      _flushing = null;
     }
   }
 
   void _scheduleRetry(Duration? requested) {
+    // A send that fails *because* the client was closed on the way out must not arm a timer on
+    // a disposed reporter — up to five minutes of dangling work with nothing to deliver.
+    if (_isDisposed) return;
+
     final delay = requested ?? config.delayFor(_failedAttempts);
     _failedAttempts++;
 
@@ -207,10 +236,14 @@ class FTelemetryReporter extends FPlayerObserver {
     _flushTimer?.cancel();
     _retryTimer?.cancel();
 
-    // Give the last batch a chance before the process goes away, then make sure the rest reached
-    // disk so the next run can pick it up.
+    // Wait for a flush already running rather than skipping the shutdown flush because one was:
+    // `flush()` answers a re-entrant call with nothing, so the last batch used to be dropped
+    // whenever disposal happened to land on a periodic flush.
+    await _flushing;
     await flush();
+
     _isDisposed = true;
+    _retryTimer?.cancel();
     await _queue?.flushToDisk();
     _client.close();
   }

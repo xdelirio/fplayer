@@ -41,11 +41,24 @@ class FTelemetryQueue {
   /// the queue.
   Future<void> load() async {
     if (_isLoaded) return;
+
+    if (!file.existsSync()) {
+      _isLoaded = true;
+      return;
+    }
+
+    final String content;
+    try {
+      content = await file.readAsString();
+    } on FileSystemException {
+      // An unreadable queue is an empty queue. Letting this escape took the reporter's whole
+      // start sequence with it — no flush timer was ever created, so telemetry was dead for the
+      // life of the process, and a retry could not help because the load had already marked
+      // itself done.
+      return;
+    }
     _isLoaded = true;
 
-    if (!file.existsSync()) return;
-
-    final content = await file.readAsString();
     for (final line in const LineSplitter().convert(content)) {
       if (line.trim().isEmpty) continue;
       try {
@@ -53,7 +66,8 @@ class FTelemetryQueue {
         if (decoded is Map<String, Object?>) {
           _events.add(FTelemetryEvent.fromJson(decoded));
         }
-      } on FormatException {
+      } on Object {
+        // Malformed in any way — bad JSON, a record missing a field a newer version added.
         continue;
       }
     }
@@ -69,7 +83,13 @@ class FTelemetryQueue {
     _events.add(event);
 
     if (_events.length > maxEntries) {
-      _events.removeRange(0, _events.length - maxEntries);
+      final dropped = _events.length - maxEntries;
+      _events.removeRange(0, dropped);
+      // Counted, because a flush in flight holds an offset into this same list. Without this,
+      // records evicted from the front while a batch was on the wire made `remove` delete that
+      // many *delivered-and-undelivered* records past the batch — silent data loss on exactly
+      // the recovery path this queue exists for.
+      _head += dropped;
       unawaited(_schedule(_rewrite));
       return;
     }
@@ -84,18 +104,35 @@ class FTelemetryQueue {
     });
   }
 
-  /// The next batch, without removing it. Call [remove] once the backend has accepted it.
+  /// Records dropped from the front since the queue was created.
+  ///
+  /// The batch a flush is holding is identified by where it *ended* in this running count, so
+  /// eviction during a flush shifts the removal instead of corrupting it.
+  int _head = 0;
+
+  /// Position just past the last record of a batch taken with [peek], for [removeThrough].
+  int get cursor => _head + _events.length;
+
+  /// The next batch, without removing it. Call [removeThrough] once the backend has accepted it.
   List<FTelemetryEvent> peek(int count) =>
       _events.take(count < 0 ? 0 : count).toList(growable: false);
 
-  /// Drops the first [count] records.
-  void remove(int count) {
+  /// Where a batch of [count] records taken now ends, for handing back to [removeThrough].
+  int cursorAfter(int count) => _head + (count < 0 ? 0 : count).clamp(0, _events.length);
+
+  /// Drops everything up to [cursor] — the value [cursorAfter] returned when the batch was
+  /// taken. Records already evicted since then simply do not count twice.
+  void removeThrough(int cursor) {
+    final count = cursor - _head;
     if (count <= 0) return;
-    _events.removeRange(0, count.clamp(0, _events.length));
+    final removed = count.clamp(0, _events.length);
+    _events.removeRange(0, removed);
+    _head += removed;
     unawaited(_schedule(_rewrite));
   }
 
   Future<void> clear() {
+    _head += _events.length;
     _events.clear();
     return _schedule(_rewrite);
   }

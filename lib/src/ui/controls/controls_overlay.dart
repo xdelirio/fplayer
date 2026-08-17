@@ -181,7 +181,10 @@ class _CenterControls extends StatelessWidget {
     // A spinner in the middle would sit exactly where the play button is; showing both at once
     // reads as a broken control, so the transport steps aside while the player is waiting — for
     // data or for a network that is not there.
-    if (value.status.isWaiting || value.isWaitingForNetwork) {
+    //
+    // The error view sits in the same place and has the same claim: a play triangle drawn
+    // through "Playback failed" is not a control anyone can act on.
+    if (value.status.isWaiting || value.isWaitingForNetwork || value.hasError) {
       return const SizedBox.shrink();
     }
 

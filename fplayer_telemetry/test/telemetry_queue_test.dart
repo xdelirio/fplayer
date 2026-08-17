@@ -97,7 +97,7 @@ void main() {
     }
 
     expect(queue.peek(2).map((e) => e.sessionId), ['s0', 's1']);
-    queue.remove(2);
+    queue.removeThrough(queue.cursorAfter(2));
     await queue.flushToDisk();
 
     expect(queue.events.map((e) => e.sessionId), ['s2', 's3', 's4']);
@@ -105,6 +105,28 @@ void main() {
     final reloaded = FTelemetryQueue(file: file);
     await reloaded.load();
     expect(reloaded.events.map((e) => e.sessionId), ['s2', 's3', 's4']);
+  });
+
+  test('a batch on the wire is not shifted by eviction behind it', () async {
+    // The recovery path this queue exists for: offline for a while, queue at its cap, a slow
+    // POST in flight while new events keep arriving and evicting the oldest.
+    final queue = FTelemetryQueue(file: file, maxEntries: 5);
+    await queue.load();
+    for (var i = 0; i < 5; i++) {
+      queue.add(event('s$i'));
+    }
+
+    final batch = queue.peek(2);
+    final cursor = queue.cursorAfter(batch.length);
+
+    // Two more arrive while the batch is being delivered, pushing s0 and s1 out.
+    queue.add(event('s5'));
+    queue.add(event('s6'));
+
+    // Delivery succeeds. The two it delivered are already gone; nothing else may be dropped.
+    queue.removeThrough(cursor);
+
+    expect(queue.events.map((e) => e.sessionId), ['s2', 's3', 's4', 's5', 's6']);
   });
 
   test('skips a corrupt line instead of losing the file', () async {
