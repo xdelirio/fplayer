@@ -158,6 +158,9 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   /// restarted when that changes rather than on every progress tick.
   bool _wasPlaying = false;
 
+  /// Whether this view has already popped its own fullscreen route.
+  bool _hasLeftFullscreen = false;
+
   @override
   void initState() {
     super.initState();
@@ -317,6 +320,13 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   void updateScrub(Duration position) => setState(() => _scrubPosition = position);
 
   @override
+  void cancelScrub() {
+    if (!_isScrubbing) return;
+    setState(() => _isScrubbing = false);
+    _restartHideTimer();
+  }
+
+  @override
   void endScrub() {
     if (!_isScrubbing) return;
     final target = _scrubPosition;
@@ -378,7 +388,18 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   /// before it closes the player, and that rule is expressed as a `PopScope` veto — which a
   /// *control the viewer had to open the chrome to reach* would trip over every time. Pressing
   /// "exit fullscreen" and watching the chrome fade instead is the bug that rule caused.
-  void _leaveFullscreen() => _pop();
+  ///
+  /// Once, and only while this view's own route is on top. The end of a video produces several
+  /// notifications carrying `completed`, and `exitOnComplete` fires on each of them: unlatched,
+  /// the second pop took the page underneath the player with it.
+  void _leaveFullscreen() {
+    if (_hasLeftFullscreen) return;
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isCurrent) return;
+
+    _hasLeftFullscreen = true;
+    Navigator.of(context).pop();
+  }
 
   void _pop() {
     final navigator = Navigator.of(context);
@@ -548,26 +569,33 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
           if (widget.config.showControls && !_isLocked)
             IgnorePointer(
               ignoring: !_areControlsVisible,
-              // Chrome that is not on screen must not be reachable either. Left focusable, the
-              // autofocused play button keeps holding focus while invisible, so OK toggles
-              // playback with nothing to show for it — and a screen reader walks a row of
-              // buttons the viewer cannot see. A panel does the same to the chrome underneath it.
-              child: ExcludeFocus(
-                excluding: !_areControlsVisible || _panel != null,
-                child: ExcludeSemantics(
-                  excluding: !_areControlsVisible,
-                  child: AnimatedOpacity(
-                    opacity: _areControlsVisible ? 1 : 0,
-                    duration: const Duration(milliseconds: 180),
-                    child: FControlsOverlay(
-                      ui: this,
-                      title: widget.title,
-                      subtitle: widget.subtitle,
-                      actions: widget.actions,
-                      previewBuilder: _previewBuilder,
-                      topBar: widget.topBarBuilder?.call(context, this),
-                      bottomBar: widget.bottomBarBuilder?.call(context, this),
-                      center: widget.centerBuilder?.call(context, this),
+              // Any touch on the chrome is an interaction, and an interaction restarts the
+              // countdown. The controller's own notifications used to do this by accident, four
+              // times a second; now that they no longer do, pressing mute or skip would let the
+              // chrome fade out from under the viewer's finger.
+              child: Listener(
+                onPointerDown: (_) => showControls(),
+                // Chrome that is not on screen must not be reachable either. Left focusable, the
+                // autofocused play button keeps holding focus while invisible, so OK toggles
+                // playback with nothing to show for it — and a screen reader walks a row of
+                // buttons the viewer cannot see. A panel does the same to the chrome under it.
+                child: ExcludeFocus(
+                  excluding: !_areControlsVisible || _panel != null,
+                  child: ExcludeSemantics(
+                    excluding: !_areControlsVisible,
+                    child: AnimatedOpacity(
+                      opacity: _areControlsVisible ? 1 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: FControlsOverlay(
+                        ui: this,
+                        title: widget.title,
+                        subtitle: widget.subtitle,
+                        actions: widget.actions,
+                        previewBuilder: _previewBuilder,
+                        topBar: widget.topBarBuilder?.call(context, this),
+                        bottomBar: widget.bottomBarBuilder?.call(context, this),
+                        center: widget.centerBuilder?.call(context, this),
+                      ),
                     ),
                   ),
                 ),

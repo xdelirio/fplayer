@@ -122,7 +122,18 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
   /// removes one observer, which pins the controller for the life of the process.
   Future<void> initialize() {
     if (_isCreated || _isDisposed) return Future<void>.value();
-    return _initializing ??= _initialize();
+
+    final pending = _initializing;
+    if (pending != null) return pending;
+
+    // Assigned here and cleared here, rather than in a `finally` inside the callee: an engine
+    // whose `create` throws synchronously runs that `finally` *before* the assignment, which
+    // left the field pinned to an already-finished future and made every later call a no-op.
+    final future = _initialize();
+    _initializing = future;
+    return future.whenComplete(() {
+      if (identical(_initializing, future)) _initializing = null;
+    });
   }
 
   Future<void> _initialize() async {
@@ -134,8 +145,6 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
       // and the UI sits on a spinner until the loading timeout invents a different reason.
       _failWith(error, stack);
       return;
-    } finally {
-      _initializing = null;
     }
 
     if (_isDisposed) {
@@ -238,15 +247,12 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     required List<FPlayerSource> playlist,
     required int index,
   }) async {
-    await initialize();
-    // `initialize` turns a failed creation into the error state rather than throwing, so this
-    // also covers "there is no engine to load anything into".
-    if (_isDisposed || !_isCreated) return;
-
     _cancelTimers();
     _hasInitialized = false;
-    _retryAttempt = 0;
 
+    // Recorded before the engine is built, not after. A creation that fails otherwise leaves an
+    // error state with no source in it — nothing for the retry ladder to re-attempt, nothing for
+    // a Try again button to act on, and no title to show on the error screen.
     _update(
       FPlayerValue(
         status: FPlayerStatus.loading,
@@ -268,6 +274,13 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
       ),
     );
     _emit(FSourceOpened(source));
+
+    await initialize();
+    // `initialize` turns a failed creation into the error state rather than throwing, so this
+    // also covers "there is no engine to load anything into".
+    if (_isDisposed || !_isCreated) return;
+
+    _retryAttempt = 0;
     _startLoadingTimeout();
 
     try {
@@ -339,7 +352,13 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _pendingSeek = clamped;
     _staleProgressTicks = 0;
 
-    await _engine.seekTo(clamped);
+    // Both UI call sites fire this and walk away, so a platform failure here has no call site to
+    // land in and would reach the zone as an app-level crash.
+    try {
+      await _engine.seekTo(clamped);
+    } on Object catch (error, stack) {
+      _failWith(error, stack);
+    }
   }
 
   /// Seeks [delta] relative to the current position. Negative goes backwards.
@@ -508,7 +527,21 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Retries the current source after a failure.
   Future<void> retry() async {
-    if (!_isCreated || _isDisposed || _value.source == null) return;
+    if (_isDisposed) return;
+    final source = _value.source;
+    if (source == null) return;
+
+    // No engine means the failure was the *creation*, and re-preparing a player that does not
+    // exist does nothing. Opening the source again is the retry in that case.
+    if (!_isCreated) {
+      await _open(
+        source,
+        playlist: _value.playlist,
+        index: _value.currentIndex,
+      );
+      return;
+    }
+
     _cancelTimers();
     _retryAttempt = 0;
     _update(_value.copyWith(status: FPlayerStatus.loading, clearError: true));
@@ -743,7 +776,21 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
       _retryTimer?.cancel();
       _retryTimer = Timer(delay, () {
-        if (_isDisposed || !_isCreated) return;
+        if (_isDisposed) return;
+
+        // A player that was never created cannot re-prepare: the attempt has to build it again,
+        // or the ladder spends every attempt on a no-op and the viewer is left on a spinner that
+        // never resolves into anything.
+        if (!_isCreated) {
+          final source = _value.source;
+          if (source != null) {
+            _fireAndForget(
+              _open(source, playlist: _value.playlist, index: _value.currentIndex),
+            );
+          }
+          return;
+        }
+
         _fireAndForget(_engine.retry());
         _startLoadingTimeout();
       });
@@ -784,12 +831,15 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _update(FPlayerValue next) {
-    // Compared by value, not identity: `copyWith` always returns a fresh instance, so an
-    // identity check never dedupes anything and every signal — including the ones carrying what
-    // the player already had — rebuilt every listener.
-    if (_isDisposed || _value == next) return;
+    if (_isDisposed) return;
+
+    // Always adopted, only sometimes announced. Equality is what decides whether listeners are
+    // worth waking — `copyWith` returns a fresh instance every time, so an identity check never
+    // deduped anything and every signal rebuilt the whole chrome — but a value that compares
+    // equal can still carry fields no `==` looks at, and dropping it loses them for good.
+    final hasChanged = _value != next;
     _value = next;
-    notifyListeners();
+    if (hasChanged) notifyListeners();
   }
 
   void _emit(FPlayerEvent event) {

@@ -73,11 +73,11 @@ class _FProgressBarState extends State<FProgressBar> with FFocusHighlight {
                 behavior: HitTestBehavior.opaque,
                 onTapDown: _isSeekable ? _onTapDown : null,
                 onTapUp: _isSeekable ? (_) => _ui.endScrub() : null,
-                onTapCancel: _isSeekable ? _ui.endScrub : null,
+                onTapCancel: _isSeekable ? _ui.cancelScrub : null,
                 onHorizontalDragStart: _isSeekable ? _onDragStart : null,
                 onHorizontalDragUpdate: _isSeekable ? _onDragUpdate : null,
                 onHorizontalDragEnd: _isSeekable ? (_) => _ui.endScrub() : null,
-                onHorizontalDragCancel: _isSeekable ? _ui.endScrub : null,
+                onHorizontalDragCancel: _isSeekable ? _ui.cancelScrub : null,
                 child: SizedBox(
                   height: theme.thumbRadius * 2 + 16,
                   width: double.infinity,

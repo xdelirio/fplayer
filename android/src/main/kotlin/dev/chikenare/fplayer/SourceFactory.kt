@@ -112,10 +112,15 @@ internal object SourceFactory {
         }
 
         // Everything is on disk, so the load error policy has nothing to retry against.
-        return DownloadHelper.createMediaSource(
-            request,
-            dataSourceFactory(context, source, network),
-        )
+        //
+        // Built through the ordinary factory from a media item that carries *both* — the stream
+        // keys that pin playback to what was actually written, and everything the app configured.
+        // `DownloadHelper.createMediaSource(request, …)` takes the request alone, and a request
+        // holds only what identifies the bytes: going through it dropped the title and artwork
+        // the lock screen shows, every side-loaded subtitle, and the DRM configuration of a
+        // protected download.
+        return mediaSourceFactory(context, source, network, loadErrorPolicy = null)
+            .createMediaSource(request.toMediaItem(mediaItem(source, metadata).buildUpon()))
     }
 
     /** Position, in milliseconds, the item should start at. */

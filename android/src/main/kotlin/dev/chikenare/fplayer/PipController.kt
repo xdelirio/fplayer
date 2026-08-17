@@ -15,6 +15,7 @@ import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Rational
+import androidx.core.content.ContextCompat
 
 /**
  * Drives Picture-in-Picture for the host Activity.
@@ -326,12 +327,15 @@ internal class PipController(
         if (isReceiverRegistered) return
         val filter = IntentFilter(actionIntent)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            appContext.registerReceiver(receiver, filter)
-        }
+        // Below Tiramisu an action-only filter with no permission is exported by default, so
+        // any app on the device could drive play, pause and seek by broadcasting the action.
+        // `ContextCompat` back-fills the not-exported flag on those versions.
+        ContextCompat.registerReceiver(
+            appContext,
+            receiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         isReceiverRegistered = true
     }
 

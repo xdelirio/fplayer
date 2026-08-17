@@ -84,18 +84,14 @@ class FTvLayerState extends State<FTvLayer> {
     // it returns. Without the second half, focus stays on a node that spans the whole player and
     // contains every candidate, so directional traversal has nowhere to go and the remote is
     // stuck — the controls are on screen and nothing answers.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-
-      if (!_ui.areControlsVisible) {
-        // `hasPrimaryFocus`, not `hasFocus`: every control is a descendant of this node, so
-        // `hasFocus` is still true on the frame the chrome is taken away — and the focus it is
-        // reporting is about to be dropped.
-        if (!_parked.hasPrimaryFocus) _parked.requestFocus();
-      } else if (_parked.hasPrimaryFocus) {
-        _parked.nextFocus();
-      }
-    });
+    //
+    // Only under a remote, and only over focus the player already held. This runs on every
+    // controller notification — four times a second while playing — so an unconditional
+    // `requestFocus` would take focus from the app around it and keep taking it: a text field
+    // beside an inline player could not hold focus at all.
+    if (isTvActive) {
+      WidgetsBinding.instance.addPostFrameCallback(_settleFocus);
+    }
 
     return PopScope(
       // Back gets to close the controls before it closes the player, but only while they are up.
@@ -138,6 +134,22 @@ class FTvLayerState extends State<FTvLayer> {
         ),
       ),
     );
+  }
+
+  /// Keeps focus somewhere usable as the chrome comes and goes.
+  void _settleFocus(Duration _) {
+    if (!mounted || !isTvActive) return;
+
+    if (_ui.areControlsVisible) {
+      if (_parked.hasPrimaryFocus) _parked.nextFocus();
+      return;
+    }
+
+    // `hasFocus`, not `hasPrimaryFocus`: this is asking "was the focus that just disappeared
+    // ours?". Every control is a descendant of this node, so on the frame the chrome is taken
+    // away that is still true — and it is exactly the case worth catching. When the answer is
+    // no, the focus belongs to the app around the player and is none of this layer's business.
+    if (_parked.hasFocus && !_parked.hasPrimaryFocus) _parked.requestFocus();
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {

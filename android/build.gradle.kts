@@ -61,4 +61,7 @@ dependencies {
     implementation("androidx.media3:media3-session:$media3Version")
     // Backs the offline download index and the cache's own metadata.
     implementation("androidx.media3:media3-database:$media3Version")
+    // For registerReceiver's not-exported flag below Tiramisu. Media3 pulls this in anyway;
+    // depending on it explicitly is what makes that safe to rely on.
+    implementation("androidx.core:core-ktx:1.13.1")
 }

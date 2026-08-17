@@ -75,8 +75,13 @@ internal object PlayerBuilders {
                 selector
                     .buildUponParameters()
                     .apply {
-                        if (maxWidth != null && maxHeight != null) {
-                            setMaxVideoSize(maxWidth, maxHeight)
+                        // Either bound on its own counts — "cap at 720p" is the common one,
+                        // and it did nothing at all unless a width came with it.
+                        if (maxWidth != null || maxHeight != null) {
+                            setMaxVideoSize(
+                                maxWidth ?: Int.MAX_VALUE,
+                                maxHeight ?: Int.MAX_VALUE,
+                            )
                         }
                         if (maxBitrate != null) {
                             setMaxVideoBitrate(maxBitrate)

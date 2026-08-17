@@ -129,6 +129,7 @@ internal class DownloadBridge(
         // Coming back after a `dispose`: the channels are still wired, so all that is needed is
         // to start listening again.
         isDisposed = false
+        events.reopen()
         invalidateIndex()
 
         val config = call.argument<Map<String, Any?>>("config").orEmpty()
@@ -276,7 +277,7 @@ internal class DownloadBridge(
         }
 
         failures.remove(id)
-        DownloadHeaders.forget(id)
+        forgetHeadersOf(id)
         if (DownloadStore.isServiceDeclared(context)) {
             DownloadService.sendRemoveDownload(context, SERVICE, id, false)
         } else {
@@ -289,6 +290,7 @@ internal class DownloadBridge(
 
     private fun removeAll(result: MethodChannel.Result) {
         failures.clear()
+        DownloadHeaders.clear()
         if (DownloadStore.isServiceDeclared(context)) {
             DownloadService.sendRemoveAllDownloads(context, SERVICE, false)
         } else {
@@ -444,6 +446,22 @@ internal class DownloadBridge(
     private fun withoutSideLoadedSubtitles(source: Map<String, Any?>): Map<String, Any?> =
         source - "subtitles"
 
+    /**
+     * Drops the headers registered for a download.
+     *
+     * By URI, because that is what they were registered under: forgetting by download id never
+     * matched anything, so every token stayed in memory for the life of the process — and the
+     * origin fallback would hand a deleted download's token to a later request to the same host.
+     */
+    private fun forgetHeadersOf(id: String) {
+        val uri = storedDownloads(requireManager() ?: return)
+            .firstOrNull { it.request.id == id }
+            ?.request
+            ?.uri
+            ?.toString()
+        DownloadHeaders.forget(uri ?: id)
+    }
+
     private fun requireManager(): DownloadManager? = DownloadStore.downloadManager
 
     /**
@@ -460,8 +478,19 @@ internal class DownloadBridge(
         handler.removeCallbacks(ticker)
         isTicking = false
         DownloadStore.downloadManager?.removeListener(this)
-        events.endOfStream()
+        // Not `endOfStream`: that closes the Dart broadcast stream permanently, so the library
+        // screen would come back to a queue that never updates again. Detaching the sink stops
+        // the publishing without ending the stream.
+        events.setDelegate(null)
         invalidateIndex()
+    }
+
+    /** Releases everything for good, when the Flutter engine itself is going away. */
+    fun release() {
+        dispose()
+        methodChannel.setMethodCallHandler(null)
+        eventChannel.setStreamHandler(null)
+        events.endOfStream()
     }
 
     private companion object {

@@ -91,12 +91,20 @@ class FDownloadItem {
   }) =>
       FPlayerSource.network(
         uri,
-        title: title ?? metadata['title'] as String?,
-        subtitle: subtitle ?? metadata['subtitle'] as String?,
+        title: title ?? _text('title'),
+        subtitle: subtitle ?? _text('subtitle'),
         startAt: startAt,
         subtitles: subtitles,
         metadata: metadata.isEmpty ? null : metadata,
       );
+
+  /// Metadata read defensively: the payload is JSON that round-tripped through the platform, so
+  /// a title that comes back as a number is a wrong value rather than a reason to throw inside
+  /// whatever list builder is drawing the downloads screen.
+  String? _text(String key) {
+    final value = metadata[key];
+    return value is String ? value : value?.toString();
+  }
 
   static const Map<Object?, FDownloadState> _stateByName = {
     'queued': FDownloadState.queued,

@@ -97,7 +97,18 @@ class FSubtitleView extends StatelessWidget {
   }
 
   Widget _placed(FSubtitleCue cue, double width, double height) {
-    final boxWidth = (cue.size ?? style.maxWidthFraction) * width;
+    final position = (cue.position ?? 0.5).clamp(0.0, 1.0);
+
+    // WebVTT's own rule: the box may take at most the room between its anchor and the edge it
+    // grows towards. Without it, `position:60% align:left` laid out a full-width box from 60%
+    // and lost nearly half the line off the right edge.
+    final available = switch (cue.positionAnchor) {
+      FCueAnchor.start => 1 - position,
+      FCueAnchor.end => position,
+      FCueAnchor.middle => 2 * (position < 0.5 ? position : 1 - position),
+    };
+    final requested = cue.size ?? style.maxWidthFraction;
+    final boxWidth = requested.clamp(0.0, available <= 0 ? requested : available) * width;
     final line = (cue.line ?? 1 - style.bottomMargin).clamp(0.0, 1.0);
 
     // A bottom-anchored cue is laid out from the bottom edge rather than translated up from a
@@ -109,7 +120,7 @@ class FSubtitleView extends StatelessWidget {
     final isBottomAnchored = cue.line == null || cue.lineAnchor == FCueAnchor.end;
 
     return Positioned(
-      left: (cue.position ?? 0.5) * width,
+      left: position * width,
       top: isBottomAnchored ? null : line * height,
       bottom: isBottomAnchored ? (1 - line) * height + bottomInset : null,
       width: boxWidth,

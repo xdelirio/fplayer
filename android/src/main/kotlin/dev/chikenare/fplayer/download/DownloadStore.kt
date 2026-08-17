@@ -83,23 +83,36 @@ internal object DownloadStore {
                 configuration.string("directoryName") ?: "fplayer_downloads",
             )
 
-        // No evictor: downloads are explicit. Silently deleting an episode the user asked to keep
-        // because a newer one needed room would be worse than failing the newer download.
-        val simpleCache = SimpleCache(directory, NoOpCacheEvictor(), provider)
-        cache = simpleCache
+        try {
+            // No evictor: downloads are explicit. Silently deleting an episode the user asked to
+            // keep because a newer one needed room would be worse than failing the newer
+            // download.
+            val simpleCache = SimpleCache(directory, NoOpCacheEvictor(), provider)
+            cache = simpleCache
 
-        manager =
-            DownloadManager(
-                applicationContext,
-                provider,
-                simpleCache,
-                networkDataSourceFactory(),
-                Executors.newFixedThreadPool(MAX_DOWNLOAD_THREADS),
-            ).apply {
-                maxParallelDownloads = configuration.int("maxParallelDownloads") ?: 3
-                minRetryCount = configuration.int("minRetryCount") ?: 5
-                requirements = requirementsOf(configuration.map("requirements"))
-            }
+            manager =
+                DownloadManager(
+                    applicationContext,
+                    provider,
+                    simpleCache,
+                    networkDataSourceFactory(),
+                    Executors.newFixedThreadPool(MAX_DOWNLOAD_THREADS),
+                ).apply {
+                    maxParallelDownloads = configuration.int("maxParallelDownloads") ?: 3
+                    minRetryCount = configuration.int("minRetryCount") ?: 5
+                    requirements = requirementsOf(configuration.map("requirements"))
+                }
+        } catch (error: Throwable) {
+            // The cache holds a lock on its folder from the moment it is constructed. Left in
+            // place after a failure, the next attempt throws "Another SimpleCache instance uses
+            // the folder" — for the rest of the process, with no way back.
+            runCatching { cache?.release() }
+            cache = null
+            runCatching { provider.close() }
+            databaseProvider = null
+            manager = null
+            throw error
+        }
     }
 
     /**
@@ -281,6 +294,11 @@ internal object DownloadHeaders {
 
     fun forget(uri: String) {
         byUri.remove(uri)
+    }
+
+    /** Drops every registered header set, for `removeAll`. */
+    fun clear() {
+        byUri.clear()
     }
 
     /**

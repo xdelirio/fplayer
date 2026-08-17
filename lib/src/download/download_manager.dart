@@ -106,12 +106,20 @@ class FDownloadManager extends ChangeNotifier {
       await _platform.initialize(config);
       if (_isDisposed) return;
 
-      _isInitialized = true;
       // Listed before listening: an event arriving between the two used to be overwritten by the
       // older snapshot the list call was still fetching.
-      _apply(await _platform.list());
+      try {
+        _apply(await _platform.list());
+      } on Object catch (error, stack) {
+        // A queue that cannot be read is an empty queue, not the end of downloads. Marking the
+        // manager initialised before this ran meant one unreadable row left `initialize`
+        // short-circuiting forever with no subscription behind it.
+        _onQueueError(error, stack);
+      }
       if (_isDisposed) return;
+
       _subscription = _platform.queue.listen(_onQueue, onError: _onQueueError);
+      _isInitialized = true;
       notifyListeners();
     } finally {
       _initializing = null;

@@ -34,7 +34,7 @@ class FSubtitleCue {
         line: (map['line'] as num?)?.toDouble(),
         lineAnchor: _anchor(map['lineAnchor']),
         position: (map['position'] as num?)?.toDouble(),
-        positionAnchor: _anchor(map['positionAnchor']),
+        positionAnchor: _anchor(map['positionAnchor'], fallback: FCueAnchor.middle),
         size: (map['size'] as num?)?.toDouble(),
         isVertical: map['isVertical'] as bool? ?? false,
       );
@@ -62,10 +62,19 @@ class FSubtitleCue {
   /// Vertical writing mode, used by some CJK subtitles. Renderers may ignore it.
   final bool isVertical;
 
-  static FCueAnchor _anchor(Object? raw) => switch (raw) {
+  /// The anchor a platform cue names, or [fallback] when it names none.
+  ///
+  /// The default differs by field, which is why it is a parameter: an unset *position* anchor
+  /// means the cue is centred like any ordinary subtitle — Media3 reports `TYPE_UNSET` as
+  /// nothing at all — while an unset *line* anchor means the box starts at the line it names.
+  /// Reading both as `start` sent every platform cue down the absolute-placement path and left
+  /// it running rightwards from the middle of the picture.
+  static FCueAnchor _anchor(Object? raw, {FCueAnchor fallback = FCueAnchor.start}) =>
+      switch (raw) {
+        'start' => FCueAnchor.start,
         'middle' => FCueAnchor.middle,
         'end' => FCueAnchor.end,
-        _ => FCueAnchor.start,
+        _ => fallback,
       };
 
   @override

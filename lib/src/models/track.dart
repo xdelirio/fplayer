@@ -62,17 +62,38 @@ sealed class FTrack {
   /// generic numbered name. Never the [id].
   String get displayName => label ?? language ?? defaultName;
 
+  /// Compares everything a picker or a summary reads, not just identity and selection.
+  ///
+  /// A manifest refresh routinely re-sends the same track with a better label or a corrected
+  /// bitrate. With those left out, the new list compared equal to the old one and the fresher
+  /// metadata was thrown away — the quality summary and the track names stayed stale for the
+  /// rest of the session.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is FTrack &&
           other.runtimeType == runtimeType &&
           other.id == id &&
+          other.index == index &&
+          other.label == label &&
+          other.language == language &&
           other.isSelected == isSelected &&
-          other.isActive == isActive;
+          other.isActive == isActive &&
+          other.isSupported == isSupported &&
+          other.isDefault == isDefault;
 
   @override
-  int get hashCode => Object.hash(runtimeType, id, isSelected, isActive);
+  int get hashCode => Object.hash(
+        runtimeType,
+        id,
+        index,
+        label,
+        language,
+        isSelected,
+        isActive,
+        isSupported,
+        isDefault,
+      );
 }
 
 /// An audio rendition: a language, a codec, a channel layout.

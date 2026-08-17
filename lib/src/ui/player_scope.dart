@@ -70,7 +70,14 @@ abstract interface class FPlayerUi {
 
   void updateScrub(Duration position);
 
+  /// Commits the scrub: the playhead moves to where the preview is.
   void endScrub();
+
+  /// Abandons the scrub, leaving playback where it was.
+  ///
+  /// What an interrupted gesture means — a pointer the system took away, a screen that locked
+  /// mid-drag. The viewer did not choose a position, so none is applied.
+  void cancelScrub();
 
   Future<void> toggleFullscreen();
 

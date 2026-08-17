@@ -42,6 +42,10 @@ class _FGestureLayerState extends State<FGestureLayer> {
 
   /// Which side is currently rippling, and how many steps have piled up on it. Null means no
   /// ripple is on screen.
+  /// Which half the current vertical drag started on: volume on the right, brightness on the
+  /// left. Decided once per gesture, in [_onScaleStart].
+  bool _isRightHalf = false;
+
   bool? _isSeekingForward;
   int _seekSteps = 0;
   Timer? _seekTimer;
@@ -53,6 +57,14 @@ class _FGestureLayerState extends State<FGestureLayer> {
   void dispose() {
     _feedbackTimer?.cancel();
     _seekTimer?.cancel();
+    // A hold that ends because the view went away — a fullscreen push, a route pop, a rebuild
+    // that changes the key — never reaches `_onHoldEnd`. Left alone, playback stays at 2× for
+    // the rest of the session with no gesture left to undo it.
+    final held = _speedBeforeHold;
+    if (held != null) {
+      _speedBeforeHold = null;
+      unawaited(_ui.controller.setSpeed(held));
+    }
     super.dispose();
   }
 
@@ -195,6 +207,10 @@ class _FGestureLayerState extends State<FGestureLayer> {
     _dragTotal = Offset.zero;
     _seekOrigin = _ui.controller.position;
     _volumeOrigin = _ui.controller.volume;
+    // Latched at the start rather than read from the live focal point: a diagonal volume swipe
+    // that drifts past the middle would otherwise turn into a brightness swipe halfway through,
+    // leaving the volume stuck at whatever it had reached and dimming the screen instead.
+    _isRightHalf = details.localFocalPoint.dx > constraints.maxWidth / 2;
     // Read once per gesture: the starting point has to be whatever the window is at, or the first
     // drag jumps from the system's brightness to whatever the maths computed from zero.
     unawaited(_ui.controller.brightness().then((value) => _brightnessOrigin = value));
@@ -215,21 +231,45 @@ class _FGestureLayerState extends State<FGestureLayer> {
       _axis = _dragTotal.dx.abs() > _dragTotal.dy.abs()
           ? _DragAxis.horizontal
           : _DragAxis.vertical;
-      if (_axis == _DragAxis.horizontal) _ui.beginScrub();
+
+      if (_axis == _DragAxis.horizontal) {
+        // Asked before starting, not while updating: with seeking switched off — which is what
+        // `FGestureConfig.none()`, and therefore the TV and bare presets, do — a swipe still
+        // forced the chrome on screen, held the auto-hide off for the length of the drag, and
+        // committed a seek to the current position on release. A needless rebuffer for a
+        // gesture the app had turned off.
+        final value = _ui.controller.value;
+        if (!_ui.config.gestures.horizontalDragSeeks ||
+            !value.isSeekable ||
+            value.duration == null) {
+          _axis = _DragAxis.undecided;
+          return;
+        }
+        _ui.beginScrub();
+      }
     }
 
     switch (_axis) {
       case _DragAxis.horizontal:
         _updateSeek(constraints.maxWidth);
       case _DragAxis.vertical:
-        _updateVertical(details.localFocalPoint.dx, constraints);
+        _updateVertical(constraints);
       case _DragAxis.undecided:
         break;
     }
   }
 
   void _onScaleEnd() {
+    // `GestureDetector` reports a cancelled scale through this same callback, with nothing to
+    // tell the two apart, so a scrub interrupted by the system still commits where the thumb
+    // was. The seek bar itself does have a cancel callback and uses `cancelScrub` there.
     if (_axis == _DragAxis.horizontal) _ui.endScrub();
+
+    // The volume and brightness badges are sticky *while the finger is down*, which is what
+    // makes them readable during a slow drag. Nothing was taking them away afterwards, so one
+    // swipe left a percentage parked mid-picture for the rest of the film.
+    if (_axis == _DragAxis.vertical) _hideFeedback();
+
     _axis = _DragAxis.undecided;
     _dragTotal = Offset.zero;
   }
@@ -268,9 +308,9 @@ class _FGestureLayerState extends State<FGestureLayer> {
             : target);
   }
 
-  void _updateVertical(double x, BoxConstraints constraints) {
+  void _updateVertical(BoxConstraints constraints) {
     final gestures = _ui.config.gestures;
-    final isRightHalf = x > constraints.maxWidth / 2;
+    final isRightHalf = _isRightHalf;
 
     if (isRightHalf && !gestures.verticalDragAdjustsVolume) return;
     if (!isRightHalf && !gestures.verticalDragAdjustsBrightness) return;

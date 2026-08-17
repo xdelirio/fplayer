@@ -234,9 +234,12 @@ class FFallbackEngine implements FPlaybackEngine {
   }
 
   Future<void> _activate(FPlaybackEngine engine, FPlayerConfig config) async {
-    _active = engine;
+    // Listening first, so nothing the creation reports is missed — but published as `_active`
+    // only once it is built. Assigning up front meant commands were dispatched into a
+    // half-constructed engine with no source, and the queue meant to hold them was unreachable.
     _subscription = engine.signals.listen(_onSignal);
     await engine.create(config);
+    _active = engine;
   }
 
   void _onSignal(FEngineSignal signal) {
@@ -245,6 +248,15 @@ class FFallbackEngine implements FPlaybackEngine {
     // Track the playhead so the fallback can resume where the primary stopped rather than
     // restarting the media from zero.
     if (signal is FEngineProgress) _position = signal.position;
+
+    // And whether it was playing — which the composite's own `play`/`pause` cannot tell it,
+    // because a pause from the lock screen, the notification or a headset button never passes
+    // through here. Without this a swap resumed a video the viewer had paused.
+    if (signal is FEnginePlayingChanged) _wasPlaying = signal.isPlaying;
+    if (signal is FEnginePlaybackStateChanged &&
+        signal.state == FEnginePlaybackState.ended) {
+      _wasPlaying = false;
+    }
 
     if (signal is FEngineFailed && _shouldFallBack(signal.error)) {
       // Swallowed on purpose: the controller would otherwise show an error and start its retry
@@ -299,6 +311,13 @@ class FFallbackEngine implements FPlaybackEngine {
       await _active?.setSource(source.copyWith(startAt: _position));
       await _replayState();
     } on Object catch (error) {
+      // Whatever was half-built is released rather than left as the active engine: it has no
+      // source, nothing will ever give it one, and every later command would be dispatched into
+      // it and disappear.
+      final orphan = _active;
+      _active = null;
+      await orphan?.dispose();
+
       if (!_signals.isClosed) {
         _signals.add(
           FEngineFailed(

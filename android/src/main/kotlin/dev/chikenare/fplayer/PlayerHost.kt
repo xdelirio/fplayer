@@ -35,7 +35,7 @@ import io.flutter.view.TextureRegistry
 internal class PlayerHost(
     private val context: Context,
     messenger: BinaryMessenger,
-    textureRegistry: TextureRegistry,
+    private val textureRegistry: TextureRegistry,
     private val playerId: Long,
     private val config: Map<String, Any?>,
     private val pip: PipController,
@@ -47,8 +47,10 @@ internal class PlayerHost(
     private val handler = Handler(Looper.getMainLooper())
     private val events = QueuingEventSink()
 
-    private val surfaceProducer: TextureRegistry.SurfaceProducer =
-        textureRegistry.createSurfaceProducer()
+    // Created in `build`, so the try/catch that releases a half-built host covers it. As a
+    // property initializer it ran before `init`, and a throw from anything after it left this
+    // texture registered with the engine for the life of the process.
+    private lateinit var surfaceProducer: TextureRegistry.SurfaceProducer
     private val methodChannel = MethodChannel(messenger, Channels.method(playerId))
     private val eventChannel = EventChannel(messenger, Channels.events(playerId))
 
@@ -66,6 +68,9 @@ internal class PlayerHost(
 
     /** Last source handed to the engine, kept so subtitles can be added without losing it. */
     private var currentSource: Map<String, Any?>? = null
+
+    /** Whether this player keeps the CPU awake, which only background playback needs. */
+    private var holdsWakeLock = false
 
     /** Title, subtitle and artwork for the lock screen and the notification. */
     private var currentMetadata: Map<String, Any?> = emptyMap()
@@ -143,6 +148,8 @@ internal class PlayerHost(
     }
 
     private fun build(config: Map<String, Any?>) {
+        surfaceProducer = textureRegistry.createSurfaceProducer()
+
         val playback = config.map("playback")
         progressIntervalMs = (playback.long("progressIntervalMs") ?: 250L).coerceAtLeast(50L)
 
@@ -207,9 +214,7 @@ internal class PlayerHost(
         // stutters or stops. Media3 acquires and releases the lock itself, tied to `isPlaying`,
         // so there is no release path here to get wrong. Only armed when background playback was
         // actually asked for — a foreground-only player has the screen keeping it awake.
-        if (background.bool("mediaSession") == true) {
-            runCatching { player.setWakeMode(C.WAKE_MODE_NETWORK) }
-        }
+        holdsWakeLock = background.bool("mediaSession") == true
 
         methodChannel.setMethodCallHandler(this)
         eventChannel.setStreamHandler(
@@ -312,7 +317,17 @@ internal class PlayerHost(
             }
 
             "retry" -> {
-                player.prepare()
+                // A retry from a parked player is the same move as the network coming back: the
+                // fatal error left the player idle, so a bare `prepare()` restarts the media
+                // from zero and leaves the "waiting for signal" flag set forever.
+                if (isWaitingForNetwork) {
+                    isWaitingForNetwork = false
+                    player.seekTo(parkedPositionMs)
+                    player.prepare()
+                    emitConnectivity()
+                } else {
+                    player.prepare()
+                }
                 result.success(null)
             }
 
@@ -802,8 +817,10 @@ internal class PlayerHost(
             runCatching { player.release() }
         }
 
-        runCatching { surfaceProducer.setCallback(null) }
-        runCatching { surfaceProducer.release() }
+        if (this::surfaceProducer.isInitialized) {
+            runCatching { surfaceProducer.setCallback(null) }
+            runCatching { surfaceProducer.release() }
+        }
     }
 
     private companion object {

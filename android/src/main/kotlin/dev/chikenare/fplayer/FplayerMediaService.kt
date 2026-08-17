@@ -128,16 +128,18 @@ internal object MediaSessionRegistry {
         options = notificationOptions
         sessions[playerId] = session
 
-        val running = service
-        if (running != null) {
-            running.addSession(session)
-        } else {
-            // Starting is safe here: a player is only created while the app is in the foreground,
-            // and the service promotes itself once playback actually begins.
-            runCatching {
-                context.startService(Intent(context, FplayerMediaService::class.java))
-                isStartRequested = true
-            }
+        service?.addSession(session)
+
+        // Unconditional, even when the service looks alive: `stopSelf` is asynchronous, so a
+        // player registering between a stop and the `onDestroy` that follows it would otherwise
+        // attach to a service on its way out and end up with none at all. `startService` is
+        // idempotent and supersedes a pending stop, which is exactly what is wanted here.
+        //
+        // Safe at this point: a player is only created while the app is in the foreground, and
+        // the service promotes itself once playback actually begins.
+        runCatching {
+            context.startService(Intent(context, FplayerMediaService::class.java))
+            isStartRequested = true
         }
     }
 

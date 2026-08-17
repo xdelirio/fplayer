@@ -62,7 +62,9 @@ class FplayerPlugin :
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         disposeAll()
-        downloads?.dispose()
+        // `release`, not `dispose`: the engine is going away, so this is the terminal teardown
+        // rather than the reversible one an app performs when it leaves its library screen.
+        downloads?.release()
         downloads = null
         channel?.setMethodCallHandler(null)
         channel = null
@@ -72,6 +74,12 @@ class FplayerPlugin :
         // does not depend on that.
         pip?.detach()
         pip = null
+        // Same reasoning as the PiP receiver above: these are registered on the activity binding
+        // and removed only in `onDetachedFromActivity` today, which leaves this depending on the
+        // framework's ordering rather than on anything here.
+        activityBinding?.removeOnUserLeaveHintListener(userLeaveHintListener)
+        activityBinding?.removeOnWindowFocusChangedListener(windowFocusListener)
+        activityBinding = null
         this.binding = null
     }
 
