@@ -784,7 +784,10 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _update(FPlayerValue next) {
-    if (_isDisposed || identical(_value, next)) return;
+    // Compared by value, not identity: `copyWith` always returns a fresh instance, so an
+    // identity check never dedupes anything and every signal — including the ones carrying what
+    // the player already had — rebuilt every listener.
+    if (_isDisposed || _value == next) return;
     _value = next;
     notifyListeners();
   }

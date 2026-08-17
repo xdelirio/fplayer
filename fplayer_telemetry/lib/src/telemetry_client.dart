@@ -94,9 +94,17 @@ class FTelemetryClient {
       );
     }
 
+    if (code == 401 || code == 403) {
+      // Credentials, not content. The token provider is asked again on the next attempt, so
+      // this is worth retrying — dropping the batch would discard everything collected while a
+      // token happened to be expired, which on a cold start is the whole session.
+      _log('unauthorised ($code), will retry with a fresh token');
+      return FTelemetryDelivery(FTelemetryDeliveryStatus.retry, statusCode: code);
+    }
+
     if (code >= 400 && code < 500) {
-      // The request itself is wrong — a bad token, a schema mismatch, a route that no longer
-      // exists. Repeating it verbatim cannot help.
+      // The request itself is wrong — a schema mismatch, a route that no longer exists.
+      // Repeating it verbatim cannot help.
       _log('rejected ($code), dropping batch');
       return FTelemetryDelivery(FTelemetryDeliveryStatus.dropped, statusCode: code);
     }

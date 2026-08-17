@@ -532,7 +532,13 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
           ),
           if (showPoster)
             widget.posterBuilder?.call(context, this) ??
-                Image.network(value.source!.posterUrl!, fit: BoxFit.cover),
+                Image.network(
+                  value.source!.posterUrl!,
+                  fit: BoxFit.cover,
+                  // A poster is decoration. One that 404s should leave the black frame the
+                  // player would have shown anyway, not a console error and a broken box.
+                  errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+                ),
           FGestureLayer(ui: this),
           FSubtitleView(
             controller: widget.controller,

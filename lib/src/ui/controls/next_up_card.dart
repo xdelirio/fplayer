@@ -30,7 +30,9 @@ class FNextUpCard extends StatelessWidget {
     final theme = ui.theme;
 
     return Align(
-      alignment: Alignment.bottomRight,
+      // Above the skip button rather than on top of it: a credits chapter near the end of an
+      // item puts both on screen at once.
+      alignment: const Alignment(1, 0.55),
       child: SafeArea(
         child: Padding(
           // Above the controls, so it never lands under the seek bar.

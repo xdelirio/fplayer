@@ -115,6 +115,14 @@ class FTelemetryReporter extends FPlayerObserver {
       _enqueue(metrics, FTelemetryEventKind.seek);
 
   @override
+  void onQualityChanged(
+    FPlaybackMetrics metrics, {
+    FVideoTrack? from,
+    FVideoTrack? to,
+  }) =>
+      _enqueue(metrics, FTelemetryEventKind.quality);
+
+  @override
   void onError(FPlaybackMetrics metrics, FPlayerError error, {required bool isFatal}) {
     // Only failures the viewer actually saw are reported. A retried blip is noise at this level,
     // and it already shows up as a stall in the numbers.

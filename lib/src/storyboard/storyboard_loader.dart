@@ -19,6 +19,8 @@ class FStoryboardLoader {
   final HttpClient? _httpClient;
   final bool _ownsClient;
 
+  bool _isDisposed = false;
+
   HttpClient? _client;
 
   /// Downloads [source] and parses it.
@@ -26,6 +28,15 @@ class FStoryboardLoader {
   /// Throws [FStoryboardException] when the index cannot be fetched or is not a format this
   /// build understands.
   Future<FStoryboard> load(FStoryboardSource source) async {
+    if (_isDisposed) {
+      throw FStoryboardException(
+        const FPlayerError(
+          code: FPlayerErrorCode.unknown,
+          message: 'The storyboard loader has been disposed',
+        ),
+      );
+    }
+
     if (source.format != 'vtt') {
       throw FStoryboardException(
         FPlayerError(
@@ -59,6 +70,8 @@ class FStoryboardLoader {
   }
 
   void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
     if (_ownsClient) _client?.close();
     _client = null;
   }

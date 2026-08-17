@@ -113,15 +113,26 @@ void main() {
     expect((await client.send(batch)).status, FTelemetryDeliveryStatus.dropped);
   });
 
-  test('a 401 and a 404 are dropped as well', () async {
-    for (final code in [401, 404]) {
+  test('a 404 is dropped: repeating it verbatim cannot help', () async {
+    final client = FTelemetryClient(
+      config: configWith(),
+      httpClient: MockClient((_) async => http.Response('', 404)),
+    );
+
+    expect((await client.send(batch)).status, FTelemetryDeliveryStatus.dropped);
+  });
+
+  test('an expired token is retried rather than thrown away', () async {
+    // The token provider is asked again on the next attempt. Dropping here discards everything
+    // collected while a token happened to be expired — on a cold start, the whole session.
+    for (final code in [401, 403]) {
       final client = FTelemetryClient(
         config: configWith(),
         httpClient: MockClient((_) async => http.Response('', code)),
       );
       expect(
         (await client.send(batch)).status,
-        FTelemetryDeliveryStatus.dropped,
+        FTelemetryDeliveryStatus.retry,
         reason: 'status $code',
       );
     }

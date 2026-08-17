@@ -250,6 +250,72 @@ class FPlayerValue {
         error: clearError ? null : (error ?? this.error),
       );
 
+  /// Value equality, which is what "widgets can compare snapshots" above requires.
+  ///
+  /// Without it every notification was a change: the controller rebuilds a snapshot on each
+  /// engine signal, and a volume event carrying the volume it already had, or a video-size event
+  /// repeating the size, rebuilt the whole chrome for nothing.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FPlayerValue &&
+          other.status == status &&
+          other.source == source &&
+          other.isPlaying == isPlaying &&
+          other.position == position &&
+          other.buffered == buffered &&
+          other.bufferedAhead == bufferedAhead &&
+          other.duration == duration &&
+          other.size == size &&
+          other.rotationDegrees == rotationDegrees &&
+          other.pixelAspectRatio == pixelAspectRatio &&
+          other.speed == speed &&
+          other.volume == volume &&
+          other.isMuted == isMuted &&
+          other.isLive == isLive &&
+          other.isSeekable == isSeekable &&
+          other.isLooping == isLooping &&
+          other.currentIndex == currentIndex &&
+          other.tracks == tracks &&
+          other.isOnline == isOnline &&
+          other.isWaitingForNetwork == isWaitingForNetwork &&
+          other.isPipSupported == isPipSupported &&
+          other.isPipActive == isPipActive &&
+          other.hasMediaSession == hasMediaSession &&
+          other.error == error &&
+          listEquals(other.playlist, playlist) &&
+          listEquals(other.cues, cues);
+
+  @override
+  int get hashCode => Object.hashAll([
+        status,
+        source,
+        isPlaying,
+        position,
+        buffered,
+        bufferedAhead,
+        duration,
+        size,
+        rotationDegrees,
+        pixelAspectRatio,
+        speed,
+        volume,
+        isMuted,
+        isLive,
+        isSeekable,
+        isLooping,
+        currentIndex,
+        tracks,
+        isOnline,
+        isWaitingForNetwork,
+        isPipSupported,
+        isPipActive,
+        hasMediaSession,
+        error,
+        ...playlist,
+        ...cues,
+      ]);
+
   @override
   String toString() => 'FPlayerValue(${status.name}, playing: $isPlaying, '
       'position: $position/${duration ?? '∞'})';

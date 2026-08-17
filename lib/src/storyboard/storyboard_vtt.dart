@@ -116,7 +116,9 @@ FStoryboardFrame? _parseBlock(List<String> block, Uri? baseUri) {
 /// Parses `HH:MM:SS.mmm` or `MM:SS.mmm`.
 ///
 /// A comma is accepted in place of the decimal point: SubRip habits leak into generated VTT files
-/// often enough that rejecting them would lose real storyboards.
+/// often enough that rejecting them would lose real storyboards. A sign is not: `int.tryParse`
+/// takes `-05` happily, and a negative component makes a frame that starts before the media
+/// does, which then sorts to the front of the index.
 Duration? _parseTimestamp(String raw) {
   final text = raw.trim().replaceAll(',', '.');
   if (text.isEmpty) return null;
@@ -125,22 +127,22 @@ Duration? _parseTimestamp(String raw) {
   if (parts.length < 2 || parts.length > 3) return null;
 
   final secondsParts = parts.last.split('.');
-  final seconds = int.tryParse(secondsParts.first);
+  final seconds = _digits(secondsParts.first);
   if (seconds == null) return null;
 
   var milliseconds = 0;
   if (secondsParts.length > 1) {
     final fraction = secondsParts[1];
-    if (fraction.isEmpty || int.tryParse(fraction) == null) return null;
+    if (fraction.isEmpty || _digits(fraction) == null) return null;
     milliseconds = int.parse(fraction.padRight(3, '0').substring(0, 3));
   }
 
-  final minutes = int.tryParse(parts[parts.length - 2]);
+  final minutes = _digits(parts[parts.length - 2]);
   if (minutes == null) return null;
 
   var hours = 0;
   if (parts.length == 3) {
-    final parsed = int.tryParse(parts.first);
+    final parsed = _digits(parts.first);
     if (parsed == null) return null;
     hours = parsed;
   }
@@ -216,4 +218,14 @@ String _resolve(String url, Uri? baseUri) {
     // may still be able to open them.
     return url;
   }
+}
+
+/// A non-negative integer, or null. Unlike `int.tryParse`, a leading sign is a rejection rather
+/// than a value.
+int? _digits(String raw) {
+  if (raw.isEmpty) return null;
+  for (final unit in raw.codeUnits) {
+    if (unit < 0x30 || unit > 0x39) return null;
+  }
+  return int.tryParse(raw);
 }

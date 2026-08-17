@@ -74,8 +74,18 @@ void main() {
     await controller.open(const FPlayerSource.network('https://example.com/a.m3u8'));
     await tester.pump();
 
-    // Loading: the transport steps aside so the spinner is not stacked on the play button.
-    expect(find.byIcon(Icons.play_arrow), findsNothing);
+    // Loading: the transport steps aside so the spinner is not stacked on the play button. It
+    // keeps its place in the tree while it does, or every rebuffer would take a remote's focus
+    // down with it — so it is invisible rather than gone.
+    expect(
+      tester.widget<Opacity>(
+        find.ancestor(
+          of: find.byIcon(Icons.play_arrow),
+          matching: find.byType(Opacity),
+        ).first,
+      ).opacity,
+      0,
+    );
 
     engine.becomeReady();
     await tester.pump();

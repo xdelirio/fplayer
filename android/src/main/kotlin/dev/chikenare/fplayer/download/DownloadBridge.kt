@@ -51,6 +51,9 @@ internal class DownloadBridge(
     private var isTicking = false
     private var isDisposed = false
 
+    /** The last read of the download index, dropped whenever the queue changes. */
+    private var cachedDownloads: List<Download>? = null
+
     private val ticker =
         object : Runnable {
             override fun run() {
@@ -87,7 +90,7 @@ internal class DownloadBridge(
         call: MethodCall,
         result: MethodChannel.Result,
     ) {
-        if (isDisposed) {
+        if (isDisposed && call.method != "initialize") {
             result.error(ErrorCodes.DISPOSED, "The download bridge has been disposed", null)
             return
         }
@@ -123,6 +126,11 @@ internal class DownloadBridge(
         call: MethodCall,
         result: MethodChannel.Result,
     ) {
+        // Coming back after a `dispose`: the channels are still wired, so all that is needed is
+        // to start listening again.
+        isDisposed = false
+        invalidateIndex()
+
         val config = call.argument<Map<String, Any?>>("config").orEmpty()
         progressIntervalMs = (config.long("progressIntervalMs") ?: 1000L).coerceAtLeast(200L)
 
@@ -309,7 +317,10 @@ internal class DownloadBridge(
 
     // region DownloadManager.Listener
 
-    override fun onInitialized(downloadManager: DownloadManager) = publish()
+    override fun onInitialized(downloadManager: DownloadManager) {
+        invalidateIndex()
+        publish()
+    }
 
     override fun onDownloadChanged(
         downloadManager: DownloadManager,
@@ -321,6 +332,7 @@ internal class DownloadBridge(
         } else if (download.state != Download.STATE_FAILED) {
             failures.remove(download.request.id)
         }
+        invalidateIndex()
         publish()
     }
 
@@ -329,13 +341,17 @@ internal class DownloadBridge(
         download: Download,
     ) {
         failures.remove(download.request.id)
+        invalidateIndex()
         publish()
     }
 
     override fun onDownloadsPausedChanged(
         downloadManager: DownloadManager,
         downloadsPaused: Boolean,
-    ) = publish()
+    ) {
+        invalidateIndex()
+        publish()
+    }
 
     override fun onIdle(downloadManager: DownloadManager) = publish()
 
@@ -367,19 +383,37 @@ internal class DownloadBridge(
         val manager = DownloadStore.downloadManager ?: return emptyList()
 
         val live = manager.currentDownloads.associateBy { it.request.id }
-        val all = mutableListOf<Map<String, Any?>>()
 
+        return storedDownloads(manager).map { stored ->
+            val download = live[stored.request.id] ?: stored
+            DownloadMapper.toMap(download, failures[download.request.id])
+        }
+    }
+
+    /**
+     * What the index holds, re-read only when it can have changed.
+     *
+     * `getDownloads` walks the whole table, and a snapshot is taken on every listener callback
+     * *and* on the one-second ticker — all on the main thread. With a library of a few hundred
+     * downloads that is a full table scan per second behind whatever the user is scrolling.
+     * Progress is not in the index anyway: the live figures are laid over the top by the caller.
+     */
+    private fun storedDownloads(manager: DownloadManager): List<Download> {
+        cachedDownloads?.let { return it }
+
+        val all = mutableListOf<Download>()
         runCatching {
             manager.downloadIndex.getDownloads().use { cursor ->
-                while (cursor.moveToNext()) {
-                    val stored = cursor.download
-                    val download = live[stored.request.id] ?: stored
-                    all += DownloadMapper.toMap(download, failures[download.request.id])
-                }
+                while (cursor.moveToNext()) all += cursor.download
             }
         }
-
+        cachedDownloads = all
         return all
+    }
+
+    /** Drops the cached index read, so the next snapshot goes back to the database. */
+    private fun invalidateIndex() {
+        cachedDownloads = null
     }
 
     private fun hasActiveDownloads(): Boolean =
@@ -412,15 +446,22 @@ internal class DownloadBridge(
 
     private fun requireManager(): DownloadManager? = DownloadStore.downloadManager
 
+    /**
+     * Stops publishing and lets go of the download manager.
+     *
+     * Reversible on purpose: an app that disposes downloads when it leaves its library screen has
+     * to be able to come back to it, and a bridge that can only die once made every later call
+     * answer `disposed` until the process restarted.
+     */
     fun dispose() {
         if (isDisposed) return
         isDisposed = true
 
         handler.removeCallbacks(ticker)
+        isTicking = false
         DownloadStore.downloadManager?.removeListener(this)
-        methodChannel.setMethodCallHandler(null)
-        eventChannel.setStreamHandler(null)
         events.endOfStream()
+        invalidateIndex()
     }
 
     private companion object {

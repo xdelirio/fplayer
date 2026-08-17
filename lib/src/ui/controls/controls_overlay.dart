@@ -184,70 +184,79 @@ class _CenterControls extends StatelessWidget {
     //
     // The error view sits in the same place and has the same claim: a play triangle drawn
     // through "Playback failed" is not a control anyone can act on.
-    if (value.status.isWaiting || value.isWaitingForNetwork || value.hasError) {
-      return const SizedBox.shrink();
-    }
+    //
+    // Hidden rather than unmounted while merely buffering: unmounting takes the focused button
+    // out of the tree with it, so every rebuffer dropped a remote's focus and the autofocus
+    // grabbed it back when the stall ended.
+    final isWaiting = value.status.isWaiting || value.isWaitingForNetwork;
+    if (value.hasError) return const SizedBox.shrink();
 
     final isCompleted = value.isCompleted;
 
     // Scaled down rather than overflowed: an inline player can be any width its host
     // gives it, and the transport is the one band that cannot be dropped.
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (config.showTrackButtons && value.hasPlaylist)
-            FPlayerButton(
-              icon: Icons.skip_previous,
-              theme: theme,
-              size: theme.primaryIconSize * 0.6,
-              semanticLabel: l10n.previous,
-              onPressed: controller.previous,
-            ),
-          if (config.showSkipButtons)
-            FPlayerButton(
-              icon: Icons.replay_10,
-              theme: theme,
-              size: theme.primaryIconSize * 0.65,
-              semanticLabel: l10n.rewind,
-              onPressed: value.isSeekable ? controller.skipBackward : null,
-            ),
-          SizedBox(width: theme.spacing * 2),
-          FPlayerButton(
-            icon: isCompleted
-                ? Icons.replay
-                : value.isPlaying
-                    ? Icons.pause
-                    : Icons.play_arrow,
-            theme: theme,
-            size: theme.primaryIconSize,
-            autofocus: true,
-            semanticLabel: isCompleted
-                ? l10n.replay
-                : value.isPlaying
-                    ? l10n.pause
-                    : l10n.play,
-            onPressed: controller.togglePlayPause,
+    return Opacity(
+      opacity: isWaiting ? 0 : 1,
+      child: IgnorePointer(
+        ignoring: isWaiting,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (config.showTrackButtons && value.hasPlaylist)
+                FPlayerButton(
+                  icon: Icons.skip_previous,
+                  theme: theme,
+                  size: theme.primaryIconSize * 0.6,
+                  semanticLabel: l10n.previous,
+                  onPressed: controller.previous,
+                ),
+              if (config.showSkipButtons)
+                FPlayerButton(
+                  icon: Icons.replay_10,
+                  theme: theme,
+                  size: theme.primaryIconSize * 0.65,
+                  semanticLabel: l10n.rewind,
+                  onPressed: value.isSeekable ? controller.skipBackward : null,
+                ),
+              SizedBox(width: theme.spacing * 2),
+              FPlayerButton(
+                icon: isCompleted
+                    ? Icons.replay
+                    : value.isPlaying
+                        ? Icons.pause
+                        : Icons.play_arrow,
+                theme: theme,
+                size: theme.primaryIconSize,
+                autofocus: true,
+                semanticLabel: isCompleted
+                    ? l10n.replay
+                    : value.isPlaying
+                        ? l10n.pause
+                        : l10n.play,
+                onPressed: controller.togglePlayPause,
+              ),
+              SizedBox(width: theme.spacing * 2),
+              if (config.showSkipButtons)
+                FPlayerButton(
+                  icon: Icons.forward_10,
+                  theme: theme,
+                  size: theme.primaryIconSize * 0.65,
+                  semanticLabel: l10n.forward,
+                  onPressed: value.isSeekable ? controller.skipForward : null,
+                ),
+              if (config.showTrackButtons && value.hasPlaylist)
+                FPlayerButton(
+                  icon: Icons.skip_next,
+                  theme: theme,
+                  size: theme.primaryIconSize * 0.6,
+                  semanticLabel: l10n.next,
+                  onPressed: value.hasNext ? controller.next : null,
+                ),
+            ],
           ),
-          SizedBox(width: theme.spacing * 2),
-          if (config.showSkipButtons)
-            FPlayerButton(
-              icon: Icons.forward_10,
-              theme: theme,
-              size: theme.primaryIconSize * 0.65,
-              semanticLabel: l10n.forward,
-              onPressed: value.isSeekable ? controller.skipForward : null,
-            ),
-          if (config.showTrackButtons && value.hasPlaylist)
-            FPlayerButton(
-              icon: Icons.skip_next,
-              theme: theme,
-              size: theme.primaryIconSize * 0.6,
-              semanticLabel: l10n.next,
-              onPressed: value.hasNext ? controller.next : null,
-            ),
-        ],
+        ),
       ),
     );
   }

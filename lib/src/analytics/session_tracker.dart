@@ -4,6 +4,7 @@ import 'dart:math';
 import '../core/player_controller.dart';
 import '../core/player_event.dart';
 import '../core/player_status.dart';
+import '../models/player_source.dart';
 import '../models/track.dart';
 import 'playback_metrics.dart';
 import 'player_observer.dart';
@@ -57,6 +58,9 @@ class FPlaybackSessionTracker {
   // Sampling state. Everything accumulates between these marks.
   DateTime _lastSampleAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _isPlaying = false;
+
+  /// The source of the session that ended, so replaying the same media can open a new one.
+  FPlayerSource? _lastSource;
   double _speed = 1;
   FVideoTrack? _activeVideo;
 
@@ -102,6 +106,7 @@ class FPlaybackSessionTracker {
     switch (event) {
       case FSourceOpened():
         _endSession(FSessionEndReason.sourceChanged);
+        _lastSource = event.source;
         _startSession(
           title: event.source.title,
           metadata: event.source.metadata,
@@ -203,9 +208,19 @@ class FPlaybackSessionTracker {
   /// on its own, and the adaptive selector moves between renditions with no event at all. `value`
   /// is the one place that is always right.
   void _onValueChanged() {
-    if (_sessionId == null) return;
-
     final value = controller.value;
+
+    // Watching the same video again is a second session, not nothing. Only `FSourceOpened`
+    // started one, and replay does not re-open a source — so every replay was invisible: no
+    // watch time, no stalls, no telemetry at all.
+    if (_sessionId == null) {
+      if (value.isPlaying && _lastSource != null) {
+        _startSession(title: _lastSource!.title, metadata: _lastSource!.metadata);
+        _isPlaying = true;
+      }
+      return;
+    }
+
     final active = value.tracks.activeVideo;
 
     final hasPlayingChanged = value.isPlaying != _isPlaying;
