@@ -57,7 +57,7 @@ internal class QueuingEventSink : EventChannel.EventSink {
      *
      * `endOfStream` is one-way — it closes the Dart broadcast stream, and a listener that
      * subscribes afterwards gets a stream that is already done. A subsystem that can be stopped
-     * and started again, like the download bridge, has to stop *without* saying "never again".
+     * and started again has to stop *without* saying "never again".
      */
     fun reopen() {
         done = false

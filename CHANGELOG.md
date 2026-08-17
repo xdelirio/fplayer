@@ -19,8 +19,8 @@ something that was wrong.
   twice**, and the binding only ever removes one observer — which pinned the
   controller, its engine and its whole value graph for the life of the process.
   The documented `initialize(); open();` pattern from an `initState` did exactly
-  that. Concurrent calls now share one creation; so do `FDownloadManager` and the
-  telemetry reporter, which had the same shape.
+  that. Concurrent calls now share one creation, as does the telemetry reporter,
+  which had the same shape.
 - **Disposal completes even when a step throws.** A `MissingPluginException` on
   the way out is ordinary while the engine detaches, and it was enough to leave a
   notifier and two stream controllers behind.
@@ -30,10 +30,8 @@ something that was wrong.
 - **A half-built `PlayerHost` leaked everything it had already allocated** — a
   texture, an ExoPlayer, a process-wide MediaSession and a started foreground
   service. A negative `minBufferMs` was enough to trigger it.
-- The media service is stopped when the last session goes, the queued event sink
-  is bounded, a failed download-store initialisation releases the cache lock it
-  took, and download headers are forgotten by the URI they were registered under
-  rather than accumulating for the life of the process.
+- The media service is stopped when the last session goes, and the queued event
+  sink is bounded rather than growing for as long as nobody is listening.
 
 ### Fixed — things that did not work
 
@@ -61,10 +59,10 @@ something that was wrong.
   ladder re-prepared an engine that did not exist. Failures from `create` and
   `setSource` now become the error state, and a retry rebuilds the player.
 - Telemetry lost delivered batches whenever events arrived during a flush; an
-  expired token discarded the batch instead of retrying with a fresh one.
-- A downloaded item lost its title, artwork, side-loaded subtitles and DRM
-  configuration; background playback had nothing keeping the CPU awake; and
+  expired token discarded the batch instead of retrying with a fresh one, and
   quality changes were never emitted at all.
+- Background playback had nothing keeping the CPU awake, so with the screen off
+  it stuttered between buffer fills.
 
 ### Fixed — behaviour
 
@@ -93,18 +91,22 @@ something that was wrong.
 - **The focus ring is on from the first frame in a leanback build.** Flutter
   starts Android in touch-highlight mode, so a remote-only screen showed no focus
   at all until the first key press — one press too late.
-- `FPlayerController(engine:)` and `FDownloadManager(platform:)` are public
-  rather than `@visibleForTesting`: installing an engine is the documented way to
-  use another backend, and the annotation made every consumer doing it fail their
-  own analysis.
-- `FDownloadConfig.network` — downloads fetch with the app's user agent and
-  timeouts, like playback does.
+- `FPlayerController(engine:)` is public rather than `@visibleForTesting`:
+  installing an engine is the documented way to use another backend, and the
+  annotation made every consumer doing it fail their own analysis.
 - `FFullscreenConfig.restoreSystemUiMode`, so leaving fullscreen restores the
   app's own system-bar mode instead of forcing `edgeToEdge`.
 - `FPlayerUi.cancelScrub()`, for a gesture the system took away.
 - `FTvScope` publishes whether a remote is driving the player, and the seek it
   performs, to any control under `FPlayerView`.
 - `FPlayerLocalizations.audioAndSubsShort`.
+
+### Removed
+
+- **Offline downloads.** `FDownloadManager` and everything under it — the Dart
+  API, the Kotlin bridge, the Media3 download service and cache, the example
+  screen and the manifest recipe. Playback from a local cache went with it: a
+  source is a source, and the package no longer keeps a download index.
 
 ### Added
 

@@ -334,7 +334,7 @@
           <tbody>
             <tr>
               <td><code>fplayer</code></td>
-              <td>The player: Media3/ExoPlayer, UI, tracks, subtitles, TV, PiP, downloads.</td>
+              <td>The player: Media3/ExoPlayer, UI, tracks, subtitles, TV, PiP.</td>
               <td><span class="pill">always</span></td>
             </tr>
             <tr>
@@ -411,10 +411,6 @@
               <td>The session <code>&lt;service&gt;</code> and three foreground-service permissions</td>
             </tr>
             <tr>
-              <td>Background downloads</td>
-              <td>The download <code>&lt;service&gt;</code> and its permissions</td>
-            </tr>
-            <tr>
               <td>Android TV</td>
               <td>Two <code>&lt;uses-feature&gt;</code> entries marked as not required</td>
             </tr>
@@ -450,24 +446,6 @@
           lock-screen controls.
         </p>
       </div>
-
-      <h3>Background downloads</h3>
-<pre><code><span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.FOREGROUND_SERVICE"</span> <span class="k">/&gt;</span>
-<span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.FOREGROUND_SERVICE_DATA_SYNC"</span> <span class="k">/&gt;</span>
-<span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.POST_NOTIFICATIONS"</span> <span class="k">/&gt;</span>
-<span class="c">&lt;!-- only to resume after a device reboot --&gt;</span>
-<span class="k">&lt;uses-permission android:name=</span><span class="s">"android.permission.RECEIVE_BOOT_COMPLETED"</span> <span class="k">/&gt;</span>
-
-<span class="k">&lt;service android:name=</span><span class="s">"dev.chikenare.fplayer.download.FplayerDownloadService"</span>
-         <span class="k">android:exported=</span><span class="s">"false"</span>
-         <span class="k">android:foregroundServiceType=</span><span class="s">"dataSync"</span><span class="k">&gt;</span>
-    <span class="k">&lt;intent-filter&gt;</span>
-        <span class="k">&lt;action android:name=</span><span class="s">"androidx.media3.exoplayer.offline.DownloadService"</span> <span class="k">/&gt;</span>
-    <span class="k">&lt;/intent-filter&gt;</span>
-<span class="k">&lt;/service&gt;</span></code></pre>
-      <p>
-        Without the service downloads still work, but only while the app is alive.
-      </p>
 
       <h3>Android TV</h3>
 <pre><code><span class="k">&lt;uses-feature android:name=</span><span class="s">"android.hardware.touchscreen"</span> <span class="k">android:required=</span><span class="s">"false"</span> <span class="k">/&gt;</span>
@@ -580,24 +558,6 @@ _controller.value.nextInPlaylist;  <span class="c">// what comes next</span></co
   <span class="k">return</span> FPlayerView(controller: _controller, config: <span class="k">const</span> FUiConfig.bare());
 }</code></pre>
 
-      <h3>Offline downloads</h3>
-<pre><code><span class="k">await</span> FDownloadManager.instance.initialize(
-  <span class="k">const</span> FDownloadConfig(requirements: FDownloadRequirements.unmeteredOnly()),
-);
-
-<span class="k">final</span> options = <span class="k">await</span> FDownloadManager.instance.inspect(source);
-<span class="k">await</span> FDownloadManager.instance.enqueue(
-  source,
-  selection: <span class="k">const</span> FDownloadSelection.standard(),  <span class="c">// up to 720p</span>
-);</code></pre>
-      <p>
-        <code>FDownloadManager</code> is a <code>ChangeNotifier</code>: listen to it and you have
-        the queue with state, progress and bytes. The part that matters: <strong>a finished
-        download plays through the same <code>FPlayerSource.network</code> as always</strong> —
-        the cache is keyed by URI, so the place where you call <code>open()</code> has no idea the
-        bytes are local.
-      </p>
-
       <h3>Playback metrics</h3>
 <pre><code><span class="k">final</span> tracker = FPlaybackSessionTracker(
   controller: _controller,
@@ -666,25 +626,6 @@ ui.panel;                            <span class="c">// what is open, if anythin
     <section id="gotchas">
       <h2>What bites</h2>
       <p>Things that cost an afternoon if nobody tells you first.</p>
-
-      <div class="bite">
-        <span class="tag">downloaded content</span>
-        <p>
-          A downloaded adaptive stream plays restricted to the qualities you actually fetched.
-          That is already handled inside the package, but if you build the source some other way,
-          with no network the adaptive selector will reach for a quality that is not on disk and
-          the stream will die. Progressive MP4 does not have this problem.
-        </p>
-      </div>
-
-      <div class="bite">
-        <span class="tag">tokens on disk</span>
-        <p>
-          A download's headers are stored in the index so that, resumed after a reboot, it can
-          authenticate again. That leaves a token in the app's private storage: use short-lived
-          tokens.
-        </p>
-      </div>
 
       <div class="bite">
         <span class="tag">odd widths</span>

@@ -23,11 +23,10 @@ A Flutter video player built on **Media3/ExoPlayer**, meant to be shared across 
 - **Chapters** on the bar and a skip intro / credits button
 - **Picture-in-Picture**, **MediaSession** (notification, lock screen, headset) and **background audio**
 - **A playback queue** with auto-advance and an "up next" card
-- **Offline downloads** with a persistent queue, network requirements and playback from cache
 - **Session analytics**: real watched time, startup, rebuffers, quality changes
 - Loose layers (`FVideoSurface`, `FSubtitleView`, `FProgressBar`) for building your own UI
 
-Outside the base package: the `fvp` engine for AV1 on older Android lives in `fplayer_fvp`, because it weighs 11.5 MB per ABI. Both siblings — `fplayer_fvp` and `fplayer_telemetry` — are consumed as path or git dependencies rather than from pub.dev. Cast is not implemented.
+Outside the base package: the `fvp` engine for AV1 on older Android lives in `fplayer_fvp`, because it weighs 11.5 MB per ABI. Both siblings — `fplayer_fvp` and `fplayer_telemetry` — are consumed as path or git dependencies rather than from pub.dev. Offline downloads and Cast are not implemented.
 
 ## Requirements
 
@@ -353,30 +352,6 @@ FPlayerConfig(background: FBackgroundConfig.audioInBackground())
 
 Publishes a session with a notification, lock-screen controls and headset buttons, and keeps the audio going when you leave the app. Off by default, so a notification is never imposed on an app that doesn't want one. The modes are `stop`, `pause` (the default) and `continueAudio`.
 
-### Offline downloads
-
-```dart
-await FDownloadManager.instance.initialize(
-  const FDownloadConfig(requirements: FDownloadRequirements.unmeteredOnly()),
-);
-
-// What can be fetched and how much space it takes
-final options = await FDownloadManager.instance.inspect(source);
-
-await FDownloadManager.instance.enqueue(
-  source,
-  selection: const FDownloadSelection.standard(),   // up to 720p
-);
-```
-
-`FDownloadManager` is a `ChangeNotifier`: listen to it and you have the queue with state, progress and bytes. The requirements (unmetered only, charging only…) are enforced by the system, so a download waiting for Wi-Fi resumes on its own with the app closed.
-
-The part that matters: **a finished download plays through the ordinary `FPlayerSource.network`**. The cache is keyed by URI, so the place where you call `open()` has no idea the bytes are local.
-
-The source's metadata travels inside Media3's download index, so a "My downloads" screen rebuilds itself from `manager.items` — titles, posters, ids — with no second database to keep in sync. `.completed`, `.active` and `.stateOf(source)` are that same list, filtered.
-
-> Headers are stored in the index so a download resumed after a reboot can re-authenticate. That leaves a token on disk: use short-lived tokens.
-
 ### Analytics
 
 ```dart
@@ -479,23 +454,6 @@ The plugin declares `INTERNET` and nothing else: I don't want to force every app
 
 Without that `<service>` the session is skipped silently and `hasMediaSession` stays false — it is checked before anything gets built.
 
-**Background downloads** (they work without this, but only while the app is alive):
-```xml
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-<!-- Only to resume after a device reboot -->
-<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-<service android:name="dev.chikenare.fplayer.download.FplayerDownloadService"
-         android:exported="false"
-         android:foregroundServiceType="dataSync">
-    <intent-filter>
-        <action android:name="androidx.media3.exoplayer.offline.DownloadService" />
-    </intent-filter>
-</service>
-```
-
 **Android TV**, so the app shows up in the leanback launcher:
 ```xml
 <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -504,7 +462,7 @@ Without that `<service>` the session is skipped silently and `hasMediaSession` s
 
 ## Example
 
-`example/` demonstrates HLS, DASH, MP4 with headers and an external subtitle verified against a local server, a storyboard, a queue with the up-next card and a source that fails on purpose, with a live state panel and the session metrics. **TV layout** opens the leanback screen — full screen, `FUiConfig.tv()`, driven entirely by a D-pad — and **Downloads** the offline queue.
+`example/` demonstrates HLS, DASH, MP4 with headers and an external subtitle verified against a local server, a storyboard, a queue with the up-next card and a source that fails on purpose, with a live state panel and the session metrics. **TV layout** opens the leanback screen: full screen, `FUiConfig.tv()`, driven entirely by a D-pad.
 
 ```bash
 cd example && flutter run

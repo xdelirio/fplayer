@@ -1,6 +1,5 @@
 package dev.chikenare.fplayer
 
-import dev.chikenare.fplayer.download.DownloadBridge
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -20,8 +19,6 @@ import io.flutter.plugin.common.PluginRegistry
  * The Activity is tracked because Picture-in-Picture is a window-level mode: it belongs to the
  * Activity, not to any one player, so a single [PipController] is shared and players borrow it.
  *
- * Downloads are attached the same way but own nothing here: the queue outlives the engine, so
- * [DownloadBridge] is only the translator between it and Dart.
  */
 class FplayerPlugin :
     FlutterPlugin,
@@ -31,7 +28,6 @@ class FplayerPlugin :
     private var channel: MethodChannel? = null
     private var pip: PipController? = null
     private val window = WindowController()
-    private var downloads: DownloadBridge? = null
     private var activityBinding: ActivityPluginBinding? = null
     private val players = mutableMapOf<Long, PlayerHost>()
     /**
@@ -56,12 +52,6 @@ class FplayerPlugin :
         binding = flutterPluginBinding
         pip = PipController(flutterPluginBinding.applicationContext)
         // Constructed eagerly so the channels answer, but it builds nothing until Dart asks: an
-        // app that never downloads pays no cache, database or threads for the feature.
-        downloads =
-            DownloadBridge(
-                flutterPluginBinding.applicationContext,
-                flutterPluginBinding.binaryMessenger,
-            )
         channel =
             MethodChannel(flutterPluginBinding.binaryMessenger, Channels.MAIN).also {
                 it.setMethodCallHandler(this)
@@ -70,10 +60,6 @@ class FplayerPlugin :
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         disposeAll()
-        // `release`, not `dispose`: the engine is going away, so this is the terminal teardown
-        // rather than the reversible one an app performs when it leaves its library screen.
-        downloads?.release()
-        downloads = null
         channel?.setMethodCallHandler(null)
         channel = null
         // Detached explicitly rather than dropped: the PiP controller registers a receiver on the

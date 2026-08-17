@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fplayer/fplayer.dart';
 
-import 'downloads_demo.dart';
 import 'tv_demo.dart';
 
 void main() => runApp(const DemoApp());
@@ -182,28 +181,12 @@ class _DemoPageState extends State<DemoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          FloatingActionButton.extended(
-            heroTag: 'tv',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (context) => const TvDemoPage()),
-            ),
-            icon: const Icon(Icons.tv),
-            label: const Text('TV layout'),
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton.extended(
-            heroTag: 'downloads',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (context) => const DownloadsDemoPage()),
-            ),
-            icon: const Icon(Icons.download),
-            label: const Text('Downloads'),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (context) => const TvDemoPage()),
+        ),
+        icon: const Icon(Icons.tv),
+        label: const Text('TV layout'),
       ),
       body: ListenableBuilder(
         listenable: _controller,

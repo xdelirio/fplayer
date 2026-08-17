@@ -12,11 +12,9 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
-import androidx.media3.exoplayer.offline.DownloadHelper
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
-import dev.chikenare.fplayer.download.DownloadStore
 import io.flutter.FlutterInjector
 
 /**
@@ -65,14 +63,7 @@ internal object SourceFactory {
         }
     }
 
-    /**
-     * Where the bytes come from: the download cache first, the network behind it.
-     *
-     * [DownloadStore.readThrough] returns its argument untouched when downloads were never
-     * initialised, so this costs nothing for apps that do not use them. The header-injecting
-     * resolver sits *upstream* of the cache on purpose: a cache hit needs no credentials, and only
-     * misses reach the wire.
-     */
+    /** Where the bytes come from, with the app's headers injected on the way out. */
     private fun dataSourceFactory(
         context: Context,
         source: Map<String, Any?>,
@@ -85,43 +76,19 @@ internal object SourceFactory {
                 DefaultDataSource.Factory(context)
             }
 
-        return DownloadStore.readThrough(headerInjecting(base, source))
+        return headerInjecting(base, source)
     }
 
-    /**
-     * The media source for [source], constrained to what was downloaded when there is a download.
-     *
-     * A downloaded adaptive stream is only partly on disk: its manifest still advertises every
-     * rendition, so offline the adaptive selector reaches for one that was never fetched and the
-     * stream dies. The download request carries the stream keys that were actually written, which
-     * is what pins the source back to reality. Streaming and progressive media fall through to the
-     * ordinary path.
-     */
+    /** The media source for [source]: a manifest, a progressive file, or a local one. */
     fun mediaSource(
         context: Context,
         source: Map<String, Any?>,
         network: Map<String, Any?>,
         metadata: Map<String, Any?> = emptyMap(),
         loadErrorPolicy: LoadErrorHandlingPolicy? = null,
-    ): MediaSource {
-        val request = DownloadStore.completedRequestFor(resolveUri(source))
-
-        if (request == null) {
-            return mediaSourceFactory(context, source, network, loadErrorPolicy)
-                .createMediaSource(mediaItem(source, metadata))
-        }
-
-        // Everything is on disk, so the load error policy has nothing to retry against.
-        //
-        // Built through the ordinary factory from a media item that carries *both* — the stream
-        // keys that pin playback to what was actually written, and everything the app configured.
-        // `DownloadHelper.createMediaSource(request, …)` takes the request alone, and a request
-        // holds only what identifies the bytes: going through it dropped the title and artwork
-        // the lock screen shows, every side-loaded subtitle, and the DRM configuration of a
-        // protected download.
-        return mediaSourceFactory(context, source, network, loadErrorPolicy = null)
-            .createMediaSource(request.toMediaItem(mediaItem(source, metadata).buildUpon()))
-    }
+    ): MediaSource =
+        mediaSourceFactory(context, source, network, loadErrorPolicy)
+            .createMediaSource(mediaItem(source, metadata))
 
     /** Position, in milliseconds, the item should start at. */
     fun startPositionMs(source: Map<String, Any?>): Long = source.long("startAtMs") ?: 0L
