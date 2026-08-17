@@ -214,6 +214,8 @@ internal class PlayerHost(
         // stutters or stops. Media3 acquires and releases the lock itself, tied to `isPlaying`,
         // so there is no release path here to get wrong. Only armed when background playback was
         // actually asked for — a foreground-only player has the screen keeping it awake.
+        // Applied per source in `setSource`, where it is known whether the bytes come over the
+        // network. Media3 acquires and releases the lock itself, tied to `isPlaying`.
         holdsWakeLock = background.bool("mediaSession") == true
 
         methodChannel.setMethodCallHandler(this)
@@ -406,6 +408,14 @@ internal class PlayerHost(
         hasReportedInitialized = false
         stopTicker()
         currentSource = source
+
+        // Set per source, not once at build time: a wifi lock on top of the partial one is worth
+        // holding for a stream and pointless for a local file, and one player sees both.
+        if (holdsWakeLock) {
+            val mode =
+                if (source.string("kind") == "network") C.WAKE_MODE_NETWORK else C.WAKE_MODE_LOCAL
+            runCatching { player.setWakeMode(mode) }
+        }
 
         isWaitingForNetwork = false
 
