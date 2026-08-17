@@ -107,6 +107,31 @@ void main() {
     expect(find.byIcon(Icons.fullscreen_exit), findsNothing);
   });
 
+  testWidgets('fullscreen with the chrome away shows nothing at all', (tester) async {
+    await pumpPlayer(
+      tester,
+      controller: controller,
+      config: const FUiConfig(showControlsOnStart: true, controlsTimeout: Duration(seconds: 2)),
+    );
+    await controller.open(source);
+    engine.becomeReady();
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.fullscreen));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.fullscreen_exit), findsOneWidget);
+
+    // Let the chrome time out with playback reporting position, the way it really does.
+    for (var i = 1; i <= 16; i++) {
+      tick(Duration(milliseconds: 250 * i));
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+
+    // The idle hairline is worth having over an inline player; over a film filling the screen it
+    // is the one thing still burning along the bottom edge after the viewer put the chrome away.
+    expect(find.byKey(const Key('fplayer.idle-progress')), findsNothing);
+  });
+
   testWidgets('a remote can open a panel, walk it and pick a track', (tester) async {
     await pumpPlayer(
       tester,

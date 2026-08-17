@@ -96,7 +96,7 @@ Presets: `FUiConfig.bare()` leaves only the video — no chrome and no gestures,
 
 If you would rather build it from scratch, the layers are available on their own: `FVideoSurface`, `FSubtitleView`, `FProgressBar`, `FTrackDialog`, `FSettingsPanel`, `FErrorView`.
 
-**The chrome starts away.** The picture is what someone opened the screen for, so nothing covers it until they ask: a tap brings the controls up, and meanwhile a hairline of progress along the bottom edge answers the one question worth answering without one. `showControlsOnStart: true` restores the old behaviour, `showIdleProgressBar: false` drops the hairline. `FUiConfig.tv()` shows the controls on start, because a remote needs something focused to start from.
+**The chrome starts away.** The picture is what someone opened the screen for, so nothing covers it until they ask: a tap brings the controls up, and meanwhile a hairline of progress along the bottom edge answers the one question worth answering without one — inline only, never over a fullscreen picture. `showControlsOnStart: true` restores the old behaviour, `showIdleProgressBar: false` drops the hairline. `FUiConfig.tv()` shows the controls on start, because a remote needs something focused to start from.
 
 **The controls live at the bottom.** Everything configurable is one tap away, no menu to walk:
 

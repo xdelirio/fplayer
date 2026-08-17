@@ -160,8 +160,11 @@ class FUiConfig {
 
   /// A hairline of progress along the bottom edge while the controls are hidden.
   ///
-  /// It is the one thing worth knowing without asking — how far in you are — and it costs no room
-  /// and no attention.
+  /// It is the one thing worth knowing without asking — how far in you are — and inline it costs
+  /// no room and no attention.
+  ///
+  /// Never in fullscreen, whatever this is set to: there the picture is the whole screen and
+  /// hiding the chrome was a request for nothing on top of it.
   final bool showIdleProgressBar;
 
   /// Keep the controls up while paused instead of timing out.

@@ -609,7 +609,12 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
                 ),
               ),
             ),
-          if (widget.config.showControls && widget.config.showIdleProgressBar)
+          // Not in fullscreen: there, the picture is the whole screen and the viewer chose to
+          // put the chrome away. A hairline burning along the bottom edge of a film is the one
+          // thing still on top of it.
+          if (widget.config.showControls &&
+              widget.config.showIdleProgressBar &&
+              !widget.isFullscreen)
             IgnorePointer(
               child: AnimatedOpacity(
                 opacity: _areControlsVisible || value.hasError ? 0 : 1,
