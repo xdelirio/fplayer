@@ -52,6 +52,9 @@ void main() {
   testWidgets('the first directional press only reveals the controls', (tester) async {
     await ready(tester);
     uiOf(tester).hideControls();
+    // Twice: hiding the chrome makes it unfocusable, and the layer takes focus back on the
+    // frame after that so the remote still has something to press against.
+    await tester.pump();
     await tester.pump();
     expect(uiOf(tester).areControlsVisible, isFalse);
 
@@ -222,6 +225,7 @@ void main() {
   testWidgets('media keys act immediately, without revealing first', (tester) async {
     await ready(tester);
     uiOf(tester).hideControls();
+    await tester.pump();
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlayPause);

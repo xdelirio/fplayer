@@ -28,6 +28,7 @@ class FFullscreenConfig {
     this.systemUiMode = SystemUiMode.immersiveSticky,
     this.exitOnComplete = true,
     this.restoreOrientations = DeviceOrientation.values,
+    this.restoreSystemUiMode = SystemUiMode.edgeToEdge,
   });
 
   /// Go fullscreen as soon as playback starts.
@@ -49,6 +50,10 @@ class FFullscreenConfig {
   /// Flutter has no way to read the app's previous preference, so the player restores this list
   /// rather than guessing. Narrow it if your app is portrait-only.
   final List<DeviceOrientation> restoreOrientations;
+
+  /// System-bar mode restored on exit, for the same reason: there is nothing to read the app's
+  /// own setting from. Set it to whatever the screen behind the player uses.
+  final SystemUiMode restoreSystemUiMode;
 
   /// Orientations to allow for a video of this shape.
   List<DeviceOrientation> orientationsFor(double aspectRatio) => switch (orientation) {
@@ -72,6 +77,7 @@ class FFullscreenConfig {
     SystemUiMode? systemUiMode,
     bool? exitOnComplete,
     List<DeviceOrientation>? restoreOrientations,
+    SystemUiMode? restoreSystemUiMode,
   }) =>
       FFullscreenConfig(
         autoOnPlay: autoOnPlay ?? this.autoOnPlay,
@@ -79,5 +85,6 @@ class FFullscreenConfig {
         systemUiMode: systemUiMode ?? this.systemUiMode,
         exitOnComplete: exitOnComplete ?? this.exitOnComplete,
         restoreOrientations: restoreOrientations ?? this.restoreOrientations,
+        restoreSystemUiMode: restoreSystemUiMode ?? this.restoreSystemUiMode,
       );
 }

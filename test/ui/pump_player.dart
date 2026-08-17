@@ -34,10 +34,21 @@ Future<void> pumpPlayer(
       textDirection: TextDirection.ltr,
       child: MediaQuery(
         data: const MediaQueryData(),
-        child: Navigator(
-          onGenerateRoute: (settings) => PageRouteBuilder<void>(
-            pageBuilder: (context, _, _) =>
-                FPlayerView(controller: controller, config: config),
+        // The shortcuts and actions a `WidgetsApp` installs, because a player without them is
+        // not the player anyone ships: arrow keys only move focus because the app above binds
+        // them to `DirectionalFocusIntent`, and half of what a remote does is focus movement.
+        child: Shortcuts(
+          shortcuts: WidgetsApp.defaultShortcuts,
+          child: Actions(
+            actions: WidgetsApp.defaultActions,
+            child: FocusTraversalGroup(
+              child: Navigator(
+                onGenerateRoute: (settings) => PageRouteBuilder<void>(
+                  pageBuilder: (context, _, _) =>
+                      FPlayerView(controller: controller, config: config),
+                ),
+              ),
+            ),
           ),
         ),
       ),

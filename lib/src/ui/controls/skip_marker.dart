@@ -77,13 +77,12 @@ class _SkipButton extends StatefulWidget {
 }
 
 class _SkipButtonState extends State<_SkipButton> with FFocusHighlight {
-
   @override
   Widget build(BuildContext context) {
     final theme = widget.ui.theme;
 
-    return Focus(
-      onFocusChange: onFocusChanged,
+    return focusable(
+      onActivate: widget.onPressed,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onPressed,

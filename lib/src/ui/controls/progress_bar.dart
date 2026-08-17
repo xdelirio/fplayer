@@ -8,7 +8,6 @@ import '../player_scope.dart';
 import '../theme.dart';
 import '../tv/tv_layer.dart';
 import 'focus_highlight.dart';
-import 'player_button.dart' show isSelectKey;
 
 /// Seek bar with buffered range, drag-to-scrub and an optional preview above the thumb.
 ///
@@ -122,8 +121,9 @@ class _FProgressBarState extends State<FProgressBar> with FFocusHighlight {
 
     if (direction != 0) {
       if (!_isSeekable) return KeyEventResult.ignored;
-      _seekStep(direction);
-      return KeyEventResult.handled;
+      // Only claimed when it was spent: a bar that swallows left and right while refusing to
+      // seek is a place focus can enter and never leave.
+      return _seekStep(direction) ? KeyEventResult.handled : KeyEventResult.ignored;
     }
 
     if (isSelectKey(key) && _ui.isScrubbing) {
@@ -139,18 +139,16 @@ class _FProgressBarState extends State<FProgressBar> with FFocusHighlight {
     return KeyEventResult.ignored;
   }
 
-  void _seekStep(int direction) {
+  bool _seekStep(int direction) {
     final tv = FTvScope.maybeOf(context);
-    if (tv != null) {
-      tv.seek(direction);
-      return;
-    }
+    if (tv != null) return tv.seek(direction);
 
     // No TV layer, so no run to accelerate and nothing deferring the commit: a keyboard press on
     // a focused seek bar is one jump, the same as the skip buttons.
     final controller = _ui.controller;
     unawaited(direction > 0 ? controller.skipForward() : controller.skipBackward());
     _ui.showControls();
+    return true;
   }
 
   /// Chapter starts as fractions of the timeline, so the bar can show where the parts divide.

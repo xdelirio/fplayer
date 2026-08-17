@@ -1,19 +1,7 @@
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../theme.dart';
 import 'focus_highlight.dart';
-
-/// Remote OK, keyboard Enter and Space all mean "activate this".
-///
-/// Shared so every control in the chrome — and any control an app builds alongside them — agrees
-/// on what counts as a press.
-bool isSelectKey(LogicalKeyboardKey key) =>
-    key == LogicalKeyboardKey.select ||
-    key == LogicalKeyboardKey.enter ||
-    key == LogicalKeyboardKey.numpadEnter ||
-    key == LogicalKeyboardKey.space ||
-    key == LogicalKeyboardKey.gameButtonA;
 
 /// A control in the player chrome.
 ///
@@ -72,12 +60,10 @@ class _FPlayerButtonState extends State<FPlayerButton> with FFocusHighlight {
       button: true,
       enabled: isEnabled,
       label: widget.semanticLabel,
-      child: Focus(
+      child: focusable(
         focusNode: widget.focusNode,
         autofocus: widget.autofocus,
-        canRequestFocus: isEnabled,
-        onFocusChange: onFocusChanged,
-        onKeyEvent: _onKey,
+        onActivate: widget.onPressed,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.onPressed,
@@ -104,14 +90,6 @@ class _FPlayerButtonState extends State<FPlayerButton> with FFocusHighlight {
         ),
       ),
     );
-  }
-
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (!isSelectKey(event.logicalKey)) return KeyEventResult.ignored;
-
-    widget.onPressed?.call();
-    return KeyEventResult.handled;
   }
 }
 
@@ -151,17 +129,9 @@ class _FPlayerTextButtonState extends State<FPlayerTextButton> with FFocusHighli
       button: true,
       enabled: isEnabled,
       label: widget.semanticLabel ?? widget.label,
-      child: Focus(
+      child: focusable(
         focusNode: widget.focusNode,
-        canRequestFocus: isEnabled,
-        onFocusChange: onFocusChanged,
-        onKeyEvent: (node, event) {
-          if (event is KeyDownEvent && isSelectKey(event.logicalKey)) {
-            widget.onPressed?.call();
-            return KeyEventResult.handled;
-          }
-          return KeyEventResult.ignored;
-        },
+        onActivate: widget.onPressed,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.onPressed,

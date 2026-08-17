@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../config/tv_config.dart';
+import '../controls/focus_highlight.dart';
 import '../player_scope.dart';
 
 /// Seek one step in a direction, from a remote's left/right key.
@@ -48,6 +49,14 @@ class FTvLayerState extends State<FTvLayer> {
   int _repeats = 0;
   bool _sawDirectionalKey = false;
 
+  /// Where focus rests while the chrome is away.
+  ///
+  /// The controls are unfocusable when hidden — an invisible button that answers OK is worse
+  /// than no button — which leaves a remote with nothing to press against. This node is that
+  /// somewhere: out of traversal, invisible, and holding the key handling that brings the chrome
+  /// back on the first press.
+  final FocusNode _parked = FocusNode(debugLabel: 'fplayer.tv-layer', skipTraversal: true);
+
   FPlayerUi get _ui => widget.ui;
 
   /// Whether the remote layout is in force right now.
@@ -59,13 +68,28 @@ class FTvLayerState extends State<FTvLayer> {
 
   @override
   void dispose() {
+    // A seek the viewer asked for and then left the screen on is still a seek they asked for:
+    // dropping it silently is the one outcome nobody wants.
+    if (_commitTimer?.isActive ?? false) _ui.endScrub();
     _commitTimer?.cancel();
+    _parked.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (widget.config.mode == FTvMode.disabled) return widget.child;
+
+    if (!_ui.areControlsVisible) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // `hasPrimaryFocus`, not `hasFocus`: every control is a descendant of this node, so
+        // `hasFocus` is still true on the frame the chrome is taken away — and the focus it is
+        // reporting is about to be dropped.
+        if (mounted && !_ui.areControlsVisible && !_parked.hasPrimaryFocus) {
+          _parked.requestFocus();
+        }
+      });
+    }
 
     return PopScope(
       // Back gets to close the controls before it closes the player, but only while they are up.
@@ -79,8 +103,10 @@ class FTvLayerState extends State<FTvLayer> {
         }
       },
       child: Focus(
-        // This node exists to watch keys on their way out, not to take focus away from controls.
-        canRequestFocus: false,
+        // This node watches keys on their way out rather than competing for focus with the
+        // controls — but it can hold focus itself, for the stretch when there is no chrome to
+        // hold it. See [_parked].
+        focusNode: _parked,
         onKeyEvent: _onKey,
         child: Actions(
           // Left as an action rather than a shortcut: a shortcut here would fire wherever focus
@@ -88,17 +114,20 @@ class FTvLayerState extends State<FTvLayer> {
           // focus. The seek bar invokes it; so can a custom control.
           actions: {
             FSeekIntent: CallbackAction<FSeekIntent>(
-              onInvoke: (intent) {
-                seekStep(intent.direction);
-                return null;
-              },
+              onInvoke: (intent) => seekStep(intent.direction),
             ),
           },
           child: FTvScope(
             isActive: isTvActive,
             seek: seekStep,
             commitSeek: commitSeek,
-            child: widget.child,
+            // A leanback build has no touch to tell Flutter that focus is worth drawing, so on a
+            // remote-first player the ring has to be on from the first frame rather than from
+            // the first press.
+            child: FTvFocusMode(
+              isRemoteDriven: isTvActive,
+              child: widget.child,
+            ),
           ),
         ),
       ),
@@ -159,20 +188,24 @@ class FTvLayerState extends State<FTvLayer> {
   ///
   /// The seek bar calls this when it holds focus and a directional key arrives; nothing reaches
   /// `_onKey` in that case, so everything a directional press implies has to happen here.
-  void seekStep(int direction) {
+  ///
+  /// Returns whether the press was spent on a seek. When it was not — a panel is over the
+  /// picture, the media cannot be seeked — the caller has to let the key travel on, or the seek
+  /// bar becomes a place focus can enter and never leave.
+  bool seekStep(int direction) {
     if (!_sawDirectionalKey) setState(() => _sawDirectionalKey = true);
 
-    if (_ui.isSettingsOpen) return;
+    if (_ui.isSettingsOpen) return false;
 
     // The first press on a hidden player reveals the controls and does nothing else, so a viewer
     // never triggers an action they could not see.
     if (!_ui.areControlsVisible) {
       _ui.showControls();
-      return;
+      return true;
     }
 
     final value = _ui.controller.value;
-    if (!value.isSeekable || value.duration == null) return;
+    if (!value.isSeekable || value.duration == null) return false;
 
     if (!_ui.isScrubbing) {
       _seekTarget = value.position;
@@ -196,6 +229,7 @@ class FTvLayerState extends State<FTvLayer> {
       _repeats = 0;
       if (mounted) _ui.endScrub();
     });
+    return true;
   }
 
   /// Sends the pending seek to the engine now, instead of waiting out the quiet time.
@@ -248,8 +282,9 @@ class FTvScope extends InheritedWidget {
   /// Moves the pending seek one step: `-1` back, `1` forward.
   ///
   /// The preview moves at once and grows with a run of presses; the engine is told once the
-  /// presses stop, or when [commitSeek] is called.
-  final void Function(int direction) seek;
+  /// presses stop, or when [commitSeek] is called. Answers whether the step was taken: a player
+  /// with a panel open, or media that cannot be seeked, leaves the key to whoever else wants it.
+  final bool Function(int direction) seek;
 
   /// Commits the pending seek immediately.
   final VoidCallback commitSeek;

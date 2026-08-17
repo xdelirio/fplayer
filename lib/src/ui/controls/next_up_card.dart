@@ -62,8 +62,8 @@ class _CardState extends State<_Card> with FFocusHighlight {
     final theme = widget.ui.theme;
     final l10n = widget.ui.localizations;
 
-    return Focus(
-      onFocusChange: onFocusChanged,
+    return focusable(
+      onActivate: widget.ui.controller.next,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.ui.controller.next,

@@ -187,60 +187,65 @@ class _CenterControls extends StatelessWidget {
 
     final isCompleted = value.isCompleted;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (config.showTrackButtons && value.hasPlaylist)
+    // Scaled down rather than overflowed: an inline player can be any width its host
+    // gives it, and the transport is the one band that cannot be dropped.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (config.showTrackButtons && value.hasPlaylist)
+            FPlayerButton(
+              icon: Icons.skip_previous,
+              theme: theme,
+              size: theme.primaryIconSize * 0.6,
+              semanticLabel: l10n.previous,
+              onPressed: controller.previous,
+            ),
+          if (config.showSkipButtons)
+            FPlayerButton(
+              icon: Icons.replay_10,
+              theme: theme,
+              size: theme.primaryIconSize * 0.65,
+              semanticLabel: l10n.rewind,
+              onPressed: value.isSeekable ? controller.skipBackward : null,
+            ),
+          SizedBox(width: theme.spacing * 2),
           FPlayerButton(
-            icon: Icons.skip_previous,
+            icon: isCompleted
+                ? Icons.replay
+                : value.isPlaying
+                    ? Icons.pause
+                    : Icons.play_arrow,
             theme: theme,
-            size: theme.primaryIconSize * 0.6,
-            semanticLabel: l10n.previous,
-            onPressed: controller.previous,
+            size: theme.primaryIconSize,
+            autofocus: true,
+            semanticLabel: isCompleted
+                ? l10n.replay
+                : value.isPlaying
+                    ? l10n.pause
+                    : l10n.play,
+            onPressed: controller.togglePlayPause,
           ),
-        if (config.showSkipButtons)
-          FPlayerButton(
-            icon: Icons.replay_10,
-            theme: theme,
-            size: theme.primaryIconSize * 0.65,
-            semanticLabel: l10n.rewind,
-            onPressed: value.isSeekable ? controller.skipBackward : null,
-          ),
-        SizedBox(width: theme.spacing * 2),
-        FPlayerButton(
-          icon: isCompleted
-              ? Icons.replay
-              : value.isPlaying
-                  ? Icons.pause
-                  : Icons.play_arrow,
-          theme: theme,
-          size: theme.primaryIconSize,
-          autofocus: true,
-          semanticLabel: isCompleted
-              ? l10n.replay
-              : value.isPlaying
-                  ? l10n.pause
-                  : l10n.play,
-          onPressed: controller.togglePlayPause,
-        ),
-        SizedBox(width: theme.spacing * 2),
-        if (config.showSkipButtons)
-          FPlayerButton(
-            icon: Icons.forward_10,
-            theme: theme,
-            size: theme.primaryIconSize * 0.65,
-            semanticLabel: l10n.forward,
-            onPressed: value.isSeekable ? controller.skipForward : null,
-          ),
-        if (config.showTrackButtons && value.hasPlaylist)
-          FPlayerButton(
-            icon: Icons.skip_next,
-            theme: theme,
-            size: theme.primaryIconSize * 0.6,
-            semanticLabel: l10n.next,
-            onPressed: value.hasNext ? controller.next : null,
-          ),
-      ],
+          SizedBox(width: theme.spacing * 2),
+          if (config.showSkipButtons)
+            FPlayerButton(
+              icon: Icons.forward_10,
+              theme: theme,
+              size: theme.primaryIconSize * 0.65,
+              semanticLabel: l10n.forward,
+              onPressed: value.isSeekable ? controller.skipForward : null,
+            ),
+          if (config.showTrackButtons && value.hasPlaylist)
+            FPlayerButton(
+              icon: Icons.skip_next,
+              theme: theme,
+              size: theme.primaryIconSize * 0.6,
+              semanticLabel: l10n.next,
+              onPressed: value.hasNext ? controller.next : null,
+            ),
+        ],
+      ),
     );
   }
 }

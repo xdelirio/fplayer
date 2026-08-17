@@ -111,36 +111,108 @@ class FPanelHeader extends StatelessWidget {
       );
 }
 
-class FPanelGhostButton extends StatelessWidget {
+/// The quiet round control in a panel's header: back, close.
+///
+/// Focusable like everything else in the chrome — it is a panel's only way out other than the
+/// remote's own back key, and a viewer who opened the panel with a D-pad has to be able to leave
+/// it the same way.
+class FPanelGhostButton extends StatefulWidget {
   const FPanelGhostButton({
     required this.theme,
     required this.icon,
     required this.onTap,
+    this.semanticLabel,
     super.key,
   });
 
   final FPlayerTheme theme;
   final IconData icon;
   final VoidCallback onTap;
+  final String? semanticLabel;
 
   @override
+  State<FPanelGhostButton> createState() => _FPanelGhostButtonState();
+}
+
+class _FPanelGhostButtonState extends State<FPanelGhostButton> with FFocusHighlight {
+  @override
   Widget build(BuildContext context) {
+    final theme = widget.theme;
     final size = theme.iconSize * 1.7;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: theme.foreground.withValues(alpha: 0.10),
+    return Semantics(
+      button: true,
+      label: widget.semanticLabel,
+      child: focusable(
+        onActivate: widget.onTap,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: theme.foreground.withValues(alpha: showsFocusRing ? 0.22 : 0.10),
+              border: Border.all(
+                color: showsFocusRing ? theme.accent : const Color(0x00000000),
+                width: 2,
+              ),
+            ),
+            child: Icon(
+              widget.icon,
+              size: theme.iconSize * 0.8,
+              color: theme.foreground,
+            ),
+          ),
         ),
-        child: Icon(icon, size: theme.iconSize * 0.8, color: theme.foreground),
       ),
     );
   }
+}
+
+/// Puts focus inside a panel when it opens, and keeps it there.
+///
+/// A panel that appears without taking focus is decorative on a remote: the viewer presses down
+/// and walks the chrome *behind* the scrim, because that is where focus still is. The scope also
+/// bounds traversal, so arrows move between the panel's own rows rather than wandering out of
+/// the sheet and under it.
+class FPanelFocusScope extends StatefulWidget {
+  const FPanelFocusScope({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<FPanelFocusScope> createState() => _FPanelFocusScopeState();
+}
+
+class _FPanelFocusScopeState extends State<FPanelFocusScope> {
+  final FocusScopeNode _node = FocusScopeNode(debugLabel: 'fplayer.panel');
+
+  @override
+  void initState() {
+    super.initState();
+    // After the first layout: the rows do not exist yet while `initState` runs, and which of
+    // them is first depends on what the media offers.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _node.hasFocus) return;
+      _node.requestFocus();
+      _node.nextFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FocusScope(
+        node: _node,
+        child: FocusTraversalGroup(child: widget.child),
+      );
 }
 
 /// A hairline between bands of a panel.
@@ -220,9 +292,8 @@ class _FPanelOptionRowState extends State<FPanelOptionRow> with FFocusHighlight 
         ? (widget.isSelected ? theme.accent : theme.foreground)
         : theme.disabledForeground;
 
-    return Focus(
-      canRequestFocus: widget.isEnabled,
-      onFocusChange: onFocusChanged,
+    return focusable(
+      onActivate: widget.isEnabled ? widget.onTap : null,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.isEnabled ? widget.onTap : null,

@@ -16,6 +16,7 @@ import '../storyboard/storyboard_preview.dart';
 import 'controls/controls_overlay.dart';
 import 'controls/error_view.dart';
 import 'controls/next_up_card.dart';
+import 'controls/panel_chrome.dart';
 import 'controls/player_button.dart';
 import 'controls/settings_panel.dart';
 import 'controls/skip_marker.dart';
@@ -142,8 +143,20 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
 
   late final FStoryboardController _storyboard =
       widget.storyboardController ?? FStoryboardController();
+
+  /// Whether this view built the storyboard controller it uses, and therefore owns its disposal.
+  ///
+  /// Read from the first widget, like the controller itself: deciding at disposal time from the
+  /// current widget disposes the caller's shared controller when the parameter was cleared, and
+  /// leaks the private one when it was filled in.
+  late final bool _ownsStoryboard = widget.storyboardController == null;
+
   FStoryboardSource? _loadedStoryboard;
   bool _hasAutoEnteredFullscreen = false;
+
+  /// Whether playback was running at the last notification, so the auto-hide countdown can be
+  /// restarted when that changes rather than on every progress tick.
+  bool _wasPlaying = false;
 
   @override
   void initState() {
@@ -170,7 +183,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   void dispose() {
     _hideTimer?.cancel();
     widget.controller.removeListener(_onPlaybackChanged);
-    if (widget.storyboardController == null) _storyboard.dispose();
+    if (_ownsStoryboard) _storyboard.dispose();
     super.dispose();
   }
 
@@ -249,6 +262,10 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
 
   @override
   void setLocked({required bool locked}) {
+    // Locking takes the seek bar off the screen, and with it whatever would have ended a scrub
+    // in progress: left set, the flag freezes the position readout and stops the chrome from
+    // ever auto-hiding again.
+    if (locked && _isScrubbing) endScrub();
     setState(() {
       _isLocked = locked;
       _panel = null;
@@ -311,7 +328,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   @override
   Future<void> toggleFullscreen() async {
     if (widget.isFullscreen) {
-      Navigator.of(context).maybePop();
+      _leaveFullscreen();
       return;
     }
 
@@ -319,10 +336,15 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
     final navigator = Navigator.of(context);
 
     widget.onFullscreenChanged?.call(true);
-    await SystemChrome.setPreferredOrientations(
-      fullscreen.orientationsFor(widget.controller.value.aspectRatio),
+    // Asked for, not waited on. The route is what the viewer pressed for; the orientation and
+    // the system bars are the platform's business, and a device that is slow to answer — or
+    // never answers — must not be able to swallow the press.
+    unawaited(
+      SystemChrome.setPreferredOrientations(
+        fullscreen.orientationsFor(widget.controller.value.aspectRatio),
+      ),
     );
-    await SystemChrome.setEnabledSystemUIMode(fullscreen.systemUiMode);
+    unawaited(SystemChrome.setEnabledSystemUIMode(fullscreen.systemUiMode));
 
     // The same controller, and therefore the same texture, so entering fullscreen costs a route
     // transition rather than a reload.
@@ -332,22 +354,35 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
       ),
     );
 
-    await SystemChrome.setPreferredOrientations(fullscreen.restoreOrientations);
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    unawaited(SystemChrome.setPreferredOrientations(fullscreen.restoreOrientations));
+    unawaited(SystemChrome.setEnabledSystemUIMode(fullscreen.restoreSystemUiMode));
     widget.onFullscreenChanged?.call(false);
   }
 
   @override
   void back() {
     if (widget.isFullscreen) {
-      Navigator.of(context).maybePop();
+      _leaveFullscreen();
       return;
     }
     if (widget.onBack != null) {
       widget.onBack!();
       return;
     }
-    Navigator.of(context).maybePop();
+    _pop();
+  }
+
+  /// Leaves the fullscreen route.
+  ///
+  /// Deliberately not `maybePop`: the remote's back button is allowed to close the controls
+  /// before it closes the player, and that rule is expressed as a `PopScope` veto — which a
+  /// *control the viewer had to open the chrome to reach* would trip over every time. Pressing
+  /// "exit fullscreen" and watching the chrome fade instead is the bug that rule caused.
+  void _leaveFullscreen() => _pop();
+
+  void _pop() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
   }
 
   // endregion
@@ -370,14 +405,20 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
     // A player that just finished, or just failed, should not leave the viewer tapping a black
     // rectangle to find the controls again.
     final value = widget.controller.value;
+    final wasPlaying = _wasPlaying;
+    _wasPlaying = value.isPlaying;
+
     if (value.hasError || value.isCompleted) {
       showControls();
-    } else if (_areControlsVisible) {
+    } else if (_areControlsVisible && wasPlaying != value.isPlaying) {
+      // Only when playback itself started or stopped. The engine reports progress four times a
+      // second, and restarting the countdown on every one of those meant it could never fire —
+      // the chrome sat over the picture for as long as the video played.
       _restartHideTimer();
     }
 
     if (widget.fullscreen.exitOnComplete && widget.isFullscreen && value.isCompleted) {
-      Navigator.of(context).maybePop();
+      _leaveFullscreen();
     } else if (widget.fullscreen.autoOnPlay &&
         !widget.isFullscreen &&
         !_hasAutoEnteredFullscreen &&
@@ -501,18 +542,28 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
           if (widget.config.showControls && !_isLocked)
             IgnorePointer(
               ignoring: !_areControlsVisible,
-              child: AnimatedOpacity(
-                opacity: _areControlsVisible ? 1 : 0,
-                duration: const Duration(milliseconds: 180),
-                child: FControlsOverlay(
-                  ui: this,
-                  title: widget.title,
-                  subtitle: widget.subtitle,
-                  actions: widget.actions,
-                  previewBuilder: _previewBuilder,
-                  topBar: widget.topBarBuilder?.call(context, this),
-                  bottomBar: widget.bottomBarBuilder?.call(context, this),
-                  center: widget.centerBuilder?.call(context, this),
+              // Chrome that is not on screen must not be reachable either. Left focusable, the
+              // autofocused play button keeps holding focus while invisible, so OK toggles
+              // playback with nothing to show for it — and a screen reader walks a row of
+              // buttons the viewer cannot see. A panel does the same to the chrome underneath it.
+              child: ExcludeFocus(
+                excluding: !_areControlsVisible || _panel != null,
+                child: ExcludeSemantics(
+                  excluding: !_areControlsVisible,
+                  child: AnimatedOpacity(
+                    opacity: _areControlsVisible ? 1 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: FControlsOverlay(
+                      ui: this,
+                      title: widget.title,
+                      subtitle: widget.subtitle,
+                      actions: widget.actions,
+                      previewBuilder: _previewBuilder,
+                      topBar: widget.topBarBuilder?.call(context, this),
+                      bottomBar: widget.bottomBarBuilder?.call(context, this),
+                      center: widget.centerBuilder?.call(context, this),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -535,7 +586,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
           if (value.hasError)
             widget.errorBuilder?.call(context, this, value.error!) ??
                 FErrorView(ui: this, error: value.error!),
-          if (_panel != null) _panelFor(_panel!),
+          if (_panel != null) FPanelFocusScope(child: _panelFor(_panel!)),
           if (widget.overlayBuilder != null) widget.overlayBuilder!(context, this),
         ],
       ),

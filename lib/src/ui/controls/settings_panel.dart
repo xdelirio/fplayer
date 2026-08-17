@@ -350,8 +350,8 @@ class _FSpeedChipState extends State<FSpeedChip> with FFocusHighlight {
   Widget build(BuildContext context) {
     final theme = widget.ui.theme;
 
-    return Focus(
-      onFocusChange: onFocusChanged,
+    return focusable(
+      onActivate: widget.onTap,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
@@ -412,8 +412,8 @@ class _NavRowState extends State<_NavRow> with FFocusHighlight {
     final theme = widget.ui.theme;
     final tile = theme.iconSize * 1.9;
 
-    return Focus(
-      onFocusChange: onFocusChanged,
+    return focusable(
+      onActivate: widget.onTap,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
