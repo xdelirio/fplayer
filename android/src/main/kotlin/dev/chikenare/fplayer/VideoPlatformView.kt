@@ -58,6 +58,17 @@ private class VideoPlatformView(
             // here would swallow the first press of a TV remote before the overlay ever saw it.
             isFocusable = false
             isFocusableInTouchMode = false
+
+            // Above the other SurfaceView in the window, which is Flutter's own. Mounting a
+            // platform view makes Flutter park its previous render surface — still holding the
+            // last frame it drew — and hand rendering to an overlay. That parked frame sits
+            // above this one by default, so whatever was on screen when the player appeared
+            // showed through the picture until the first decoded frame covered it: on a
+            // television, several seconds of the previous screen ghosted over the video.
+            //
+            // Media overlay, not `setZOrderOnTop`: on top would also put it above the Flutter
+            // overlay that draws the controls.
+            setZOrderMediaOverlay(true)
         }
 
     private var isDisposed = false

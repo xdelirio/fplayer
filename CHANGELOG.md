@@ -15,6 +15,14 @@
 
 ### Fixed
 
+- **The previous screen ghosted over the video for several seconds.** Mounting
+  a platform view makes Flutter park its own render surface — still holding the
+  last frame it drew — and hand rendering to an overlay above it. That parked
+  frame outranked the video's surface, so whatever was on screen when the
+  player appeared stayed visible, half-transparent, until the first decoded
+  frame covered it: on a television that is seconds of the screen behind,
+  including a second seek bar sitting above the real one. The video surface now
+  declares itself a media overlay, which puts it above the parked one.
 - **The remote seized up once a player was rendering through a SurfaceView.**
   `PlatformViewLink` wraps the view in a focus node, and that node joined the
   traversal ring: one press of the D-pad walked focus off the chrome and into
