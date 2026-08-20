@@ -771,7 +771,12 @@ internal class PlayerHost(
     }
 
     private fun attachSurface() {
-        if (!needsSurface) return
+        // Guarded here rather than at each call site: `build` calls this before anything is
+        // playing, and on the SurfaceView path there is no producer to read a surface from — the
+        // platform view owns the surface and hands it over through `attachExternalSurface`.
+        // Reaching the line below with an uninitialised `surfaceProducer` throws, and the throw
+        // lands in `init`, which releases the player it just built.
+        if (usesSurfaceView || !needsSurface) return
         val surface = surfaceProducer.surface
         player.setVideoSurface(surface)
         needsSurface = surface == null

@@ -13,6 +13,17 @@
   8-bit changed nothing, and no error was ever raised, so the `fplayer_fvp`
   fallback never had a reason to engage either.
 
+### Fixed
+
+- **Creating a player on a television failed outright.** `build` calls
+  `attachSurface` before anything is playing, and that reads the
+  `SurfaceProducer` — which the SurfaceView path never creates. The
+  `UninitializedPropertyAccessException` landed in the constructor's own
+  try/catch, which released the ExoPlayer it had just built, so the log read
+  `Init` immediately followed by `Release` and Dart got `create_failed`. Guarded
+  inside `attachSurface` rather than at the call site, so every path through it
+  is covered.
+
 ### Changed
 
 - **The audio and subtitles dialog no longer closes on the first row tapped.**
