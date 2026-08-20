@@ -91,6 +91,25 @@ void main() {
       expect(find.byType(Texture), findsNothing);
     });
 
+    testWidgets('is kept out of focus traversal', (tester) async {
+      // The video is output, never a destination. `PlatformViewLink` puts a focus node around
+      // the view, and on a remote that node joined the traversal ring: pressing down walked
+      // focus off the chrome into something invisible with nothing to activate, which reads as
+      // the controls having seized up.
+      await readyOnPlatformView(tester);
+
+      expect(
+        find.ancestor(
+          of: find.byType(PlatformViewLink),
+          matching: find.byType(ExcludeFocus),
+        ),
+        findsOneWidget,
+      );
+
+      final scope = FocusScope.of(tester.element(find.byType(FVideoSurface)));
+      expect(scope.traversalDescendants, isEmpty);
+    });
+
     testWidgets('sizes the view itself rather than scaling it', (tester) async {
       // A 16:9 frame in an 800×400 box: `contain` gives 711.1×400, and the platform view has to
       // be laid out at that size. Handing it a unit box and a transform — what the texture path

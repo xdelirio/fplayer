@@ -15,6 +15,14 @@
 
 ### Fixed
 
+- **The remote seized up once a player was rendering through a SurfaceView.**
+  `PlatformViewLink` wraps the view in a focus node, and that node joined the
+  traversal ring: one press of the D-pad walked focus off the chrome and into
+  something invisible with nothing to activate, so every later press did
+  nothing and only the system back key still worked. The video is output, never
+  a destination — the whole subtree is now excluded from focus, and the
+  Android-to-Flutter `onFocus` forwarding is gone with it, since it existed
+  only to hand Flutter's focus to that node.
 - **Creating a player on a television failed outright.** `build` calls
   `attachSurface` before anything is playing, and that reads the
   `SurfaceProducer` — which the SurfaceView path never creates. The

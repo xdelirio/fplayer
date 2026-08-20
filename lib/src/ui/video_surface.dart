@@ -149,34 +149,43 @@ class _SurfaceViewOutput extends StatelessWidget {
   }
 
   Widget _platformView(BuildContext context) {
-    return PlatformViewLink(
-      // A new player is a new view: without this the link would keep the old one and its
-      // surface would stay wired to a player that no longer exists.
-      key: ValueKey<int>(playerId),
-      viewType: _viewType,
-      surfaceFactory: (context, controller) => AndroidViewSurface(
-        controller: controller as AndroidViewController,
-        // The controls sit on top of this and have to keep receiving taps and D-pad presses.
-        hitTestBehavior: PlatformViewHitTestBehavior.transparent,
-        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+    // The video is output, never a destination. `PlatformViewLink` puts a focus node around the
+    // view, and on a remote that node joins the traversal ring: pressing down walked focus off
+    // the chrome and into something invisible with nothing to activate, which reads as the
+    // controls having seized up. Excluded rather than made unfocusable, so nothing inside the
+    // platform view can claim focus either.
+    return ExcludeFocus(
+      child: PlatformViewLink(
+        // A new player is a new view: without this the link would keep the old one and its
+        // surface would stay wired to a player that no longer exists.
+        key: ValueKey<int>(playerId),
+        viewType: _viewType,
+        surfaceFactory: (context, controller) => AndroidViewSurface(
+          controller: controller as AndroidViewController,
+          // The controls sit on top of this and have to keep receiving taps and D-pad presses.
+          hitTestBehavior: PlatformViewHitTestBehavior.transparent,
+          gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+        ),
+        onCreatePlatformView: (params) {
+          // Hybrid composition, asked for by name. The cheaper texture-layer path draws the
+          // platform view into a Flutter-owned surface, and a SurfaceView's buffer is not part
+          // of what gets drawn: the video would come out as a black hole.
+          //
+          // No `onFocus`: that hands Flutter's focus to the platform view whenever Android
+          // gives the view focus, which would take it off whatever control the viewer was on.
+          final controller = PlatformViewsService.initExpensiveAndroidView(
+            id: params.id,
+            viewType: _viewType,
+            layoutDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
+            creationParams: <String, Object?>{'playerId': playerId},
+            creationParamsCodec: const StandardMessageCodec(),
+          );
+          controller
+            ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
+            ..create();
+          return controller;
+        },
       ),
-      onCreatePlatformView: (params) {
-        // Hybrid composition, asked for by name. The cheaper texture-layer path draws the
-        // platform view into a Flutter-owned surface, and a SurfaceView's buffer is not part of
-        // what gets drawn: the video would come out as a black hole.
-        final controller = PlatformViewsService.initExpensiveAndroidView(
-          id: params.id,
-          viewType: _viewType,
-          layoutDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
-          creationParams: <String, Object?>{'playerId': playerId},
-          creationParamsCodec: const StandardMessageCodec(),
-          onFocus: () => params.onFocusChanged(true),
-        );
-        controller
-          ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
-          ..create();
-        return controller;
-      },
     );
   }
 }
