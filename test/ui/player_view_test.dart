@@ -221,6 +221,12 @@ void main() {
     await tester.tap(find.text('Spanish'));
     await tester.pump();
 
+    // Chosen, not yet applied: the dialog exists to pick audio *and* subtitles, so it waits.
+    expect(engine.calls, isNot(contains('selectTrack:text:text:0:0')));
+
+    await tester.tap(find.text(const FPlayerLocalizations().apply));
+    await tester.pump();
+
     expect(engine.calls, contains('selectTrack:text:text:0:0'));
   });
 

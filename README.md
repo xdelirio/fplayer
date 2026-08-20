@@ -104,6 +104,7 @@ If you would rather build it from scratch, the layers are available on their own
 |---|---|
 | `showAudioSubtitlesButton` | reads `Audio & Subtitles`, opens both track lists side by side; hidden when there is nothing to pick |
 | `showQualityButton` | reads `Auto · 1080p`, opens the ladder; only on adaptive media with more than one rung |
+| `showQualityBitrate` | the kbps beside each rung in that ladder. On by default; `false` leaves `1080p` alone |
 | `showSpeedButton` | reads `1x`, opens the speeds as pills. Dropped under a remote, where the settings panel carries it instead |
 | `showMuteButton`, `showFitButton`, `showFullscreenButton` | |
 | `showSettingsButton` | the catch-all panel. Off on touch, on for `FUiConfig.tv()` |
@@ -220,7 +221,9 @@ final label = tracks.isVideoAuto
     : tracks.selectedVideo!.qualityLabel;
 ```
 
-The quality menu shows one row per rung: manifests routinely carry several renditions of the same size, and a list with `1080p` three times asks a question nobody can answer. Each size keeps its best rendition; `tracks.video` still holds them all.
+The quality menu shows one row per rung: manifests routinely carry several renditions of the same size, and a list with `1080p` three times asks a question nobody can answer. Each size keeps its best rendition; `tracks.video` still holds them all. Each row carries its bitrate — the number that actually separates two renditions of the same size — which `FUiConfig(showQualityBitrate: false)` drops for an audience that reads `1080p` and nothing else.
+
+**The audio and subtitles dialog holds its choices until they are applied.** It exists because the decision is one decision — Japanese audio with English subtitles — and closing on the first row tapped meant a second trip through it for the second half. Rows tick as they are chosen, `Apply` pushes them to the player, and `Cancel`, the close control and a tap outside all discard. Only what actually moved is sent, so confirming a subtitle change does not re-select the audio track that was already playing. The settings panel is unchanged: it walks one axis at a time, so a tap there is a whole decision and it closes on it.
 
 `qualityLabel` normalises to the rungs people recognise. Cinematic content is wider than 16:9, so a 1680×750 rendition is labelled `1080p` and not `750p`; `width` and `height` are still there if you prefer the raw numbers.
 

@@ -49,6 +49,8 @@ class FPlayerLocalizations {
     this.skipAd = 'Skip ad',
     this.waitingForNetwork = 'Waiting for a connection…',
     this.retry = 'Try again',
+    this.cancel = 'Cancel',
+    this.apply = 'Apply',
     this.errorTitle = 'Playback failed',
     this.errorNetwork = 'Check your connection and try again.',
     this.errorUnauthorized = 'Your session expired. Sign in again.',
@@ -97,6 +99,8 @@ class FPlayerLocalizations {
           skipAd: 'Saltar anuncio',
           waitingForNetwork: 'Esperando conexión…',
           retry: 'Reintentar',
+          cancel: 'Cancelar',
+          apply: 'Aplicar',
           errorTitle: 'No se pudo reproducir',
           errorNetwork: 'Revisa tu conexión y vuelve a intentarlo.',
           errorUnauthorized: 'Tu sesión expiró. Inicia sesión de nuevo.',
@@ -160,6 +164,11 @@ class FPlayerLocalizations {
 
   final String retry;
 
+  /// The two ways out of the audio and subtitles dialog, which holds a choice until it is
+  /// confirmed rather than acting on the first row that is tapped.
+  final String cancel;
+  final String apply;
+
   final String errorTitle;
   final String errorNetwork;
   final String errorUnauthorized;
@@ -205,6 +214,8 @@ class FPlayerLocalizations {
     String? skipAd,
     String? waitingForNetwork,
     String? retry,
+    String? cancel,
+    String? apply,
     String? errorTitle,
     String? errorNetwork,
     String? errorUnauthorized,
@@ -250,6 +261,8 @@ class FPlayerLocalizations {
         skipAd: skipAd ?? this.skipAd,
         waitingForNetwork: waitingForNetwork ?? this.waitingForNetwork,
         retry: retry ?? this.retry,
+        cancel: cancel ?? this.cancel,
+        apply: apply ?? this.apply,
         errorTitle: errorTitle ?? this.errorTitle,
         errorNetwork: errorNetwork ?? this.errorNetwork,
         errorUnauthorized: errorUnauthorized ?? this.errorUnauthorized,

@@ -1,6 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fplayer/fplayer.dart';
 
+import 'fake_engine.dart';
+import 'pump_player.dart';
+
 FVideoTrack track({
   required String id,
   int? width,
@@ -51,5 +54,58 @@ void main() {
     ]);
 
     expect(rungs.length, 2);
+  });
+
+  group('the bitrate beside each rung', () {
+    late FakeEngine engine;
+    late FPlayerController controller;
+
+    final tracks = FTracks(
+      video: [
+        track(id: 'v1080', width: 1920, height: 1080, bitrate: 2400000),
+        track(id: 'v720', width: 1280, height: 720, bitrate: 1232000),
+      ],
+    );
+
+    setUp(() {
+      engine = FakeEngine();
+      controller = quietController(engine);
+    });
+
+    tearDown(() => controller.dispose());
+
+    Future<void> openQuality(WidgetTester tester, FUiConfig config) async {
+      await pumpPlayer(tester, controller: controller, config: config);
+      await controller.open(const FPlayerSource.network('https://example.com/a.m3u8'));
+      engine.becomeReady();
+      engine.emit(FEngineTracksChanged(tracks));
+      await tester.pump();
+
+      uiOf(tester).openPanel(FPlayerPanel.quality);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('is there by default', (tester) async {
+      await openQuality(tester, const FUiConfig(showControlsOnStart: true));
+
+      expect(find.text('1080p'), findsOneWidget);
+      expect(find.text('2400 kbps'), findsOneWidget);
+      expect(find.text('1232 kbps'), findsOneWidget);
+
+      await settlePlayer(tester);
+    });
+
+    testWidgets('goes away when the config says so, leaving the rungs', (tester) async {
+      await openQuality(
+        tester,
+        const FUiConfig(showControlsOnStart: true, showQualityBitrate: false),
+      );
+
+      expect(find.text('1080p'), findsOneWidget);
+      expect(find.text('720p'), findsOneWidget);
+      expect(find.textContaining('kbps'), findsNothing);
+
+      await settlePlayer(tester);
+    });
   });
 }

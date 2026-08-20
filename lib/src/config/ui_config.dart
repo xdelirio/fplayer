@@ -83,6 +83,7 @@ class FUiConfig {
     this.showSpeedButton = true,
     this.showAudioSubtitlesButton = true,
     this.showQualityButton = true,
+    this.showQualityBitrate = true,
     this.showSettingsButton = false,
     this.showFitButton = false,
     this.showLockButton = true,
@@ -135,6 +136,7 @@ class FUiConfig {
         showSpeedButton = false,
         showAudioSubtitlesButton = false,
         showQualityButton = false,
+        showQualityBitrate = true,
         showSettingsButton = false,
         showFitButton = false,
         showLockButton = false,
@@ -201,6 +203,12 @@ class FUiConfig {
   /// The current rung, as a control. Appears only on adaptive media with more than one.
   final bool showQualityButton;
 
+  /// Put each rung's bitrate beside it in the quality list — `1080p    4500 kbps`.
+  ///
+  /// On by default because it is the number that separates two renditions of the same size. Turn
+  /// it off for an audience that reads `1080p` and nothing else.
+  final bool showQualityBitrate;
+
   /// The catch-all panel. Off on touch, where the buttons above cover the same ground in one tap
   /// instead of two; on for `FUiConfig.tv()`, where a menu beats a row of small targets.
   final bool showSettingsButton;
@@ -241,6 +249,7 @@ class FUiConfig {
     bool? showSpeedButton,
     bool? showAudioSubtitlesButton,
     bool? showQualityButton,
+    bool? showQualityBitrate,
     bool? showSettingsButton,
     bool? showFitButton,
     bool? showLockButton,
@@ -272,6 +281,7 @@ class FUiConfig {
         showAudioSubtitlesButton:
             showAudioSubtitlesButton ?? this.showAudioSubtitlesButton,
         showQualityButton: showQualityButton ?? this.showQualityButton,
+        showQualityBitrate: showQualityBitrate ?? this.showQualityBitrate,
         showSettingsButton: showSettingsButton ?? this.showSettingsButton,
         showFitButton: showFitButton ?? this.showFitButton,
         showLockButton: showLockButton ?? this.showLockButton,

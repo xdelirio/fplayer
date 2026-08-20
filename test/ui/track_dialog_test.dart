@@ -46,6 +46,8 @@ void main() {
     ],
   );
 
+  const l10n = FPlayerLocalizations();
+
   setUp(() {
     engine = FakeEngine();
     controller = quietController(engine);
@@ -77,20 +79,93 @@ void main() {
     expect(find.text('English'), findsOneWidget);
     expect(find.text('Italian'), findsOneWidget);
     expect(find.text('Spanish'), findsOneWidget);
-    expect(find.text(const FPlayerLocalizations().off), findsOneWidget);
+    expect(find.text(l10n.off), findsOneWidget);
 
     await settlePlayer(tester);
   });
 
-  testWidgets('picking an audio track reaches the engine and closes the dialog', (tester) async {
+  testWidgets('a choice is held until it is applied', (tester) async {
     await ready(tester);
     engine.calls.clear();
 
     await tester.tap(find.text('Italian'));
     await tester.pump();
 
+    // Still open, and the engine has heard nothing: the dialog is for choosing audio *and*
+    // subtitles, and closing on the first row tapped meant a second trip for the second choice.
+    expect(find.byType(FTrackDialog), findsOneWidget);
+    expect(engine.calls, isEmpty);
+
+    await tester.tap(find.text(l10n.apply));
+    await tester.pump();
+
     expect(engine.calls, contains('selectTrack:audio:audio:0:1'));
     expect(find.byType(FTrackDialog), findsNothing);
+    await settlePlayer(tester);
+  });
+
+  testWidgets('both kinds of track are applied in one pass', (tester) async {
+    await ready(tester);
+    engine.calls.clear();
+
+    await tester.tap(find.text('Italian'));
+    await tester.pump();
+    await tester.tap(find.text('Spanish'));
+    await tester.pump();
+    await tester.tap(find.text(l10n.apply));
+    await tester.pump();
+
+    expect(engine.calls, contains('selectTrack:audio:audio:0:1'));
+    expect(engine.calls, contains('selectTrack:text:text:0:0'));
+    await settlePlayer(tester);
+  });
+
+  testWidgets('applying pushes only what the viewer moved', (tester) async {
+    await ready(tester);
+    engine.calls.clear();
+
+    // Subtitles only. Re-selecting the audio track that is already playing is not free — it
+    // goes to the engine and can rebuffer — so Apply must leave it alone.
+    await tester.tap(find.text('Spanish'));
+    await tester.pump();
+    await tester.tap(find.text(l10n.apply));
+    await tester.pump();
+
+    expect(engine.calls, contains('selectTrack:text:text:0:0'));
+    expect(engine.calls.where((c) => c.startsWith('selectTrack:audio')), isEmpty);
+    await settlePlayer(tester);
+  });
+
+  testWidgets('cancelling leaves the player alone', (tester) async {
+    await ready(tester);
+    engine.calls.clear();
+
+    await tester.tap(find.text('Italian'));
+    await tester.pump();
+    await tester.tap(find.text(l10n.cancel));
+    await tester.pump();
+
+    expect(engine.calls, isEmpty);
+    expect(find.byType(FTrackDialog), findsNothing);
+    await settlePlayer(tester);
+  });
+
+  testWidgets('the tick follows the choice before it is applied', (tester) async {
+    await ready(tester);
+
+    FPanelOptionRow rowFor(String label) => tester.widget<FPanelOptionRow>(
+          find.ancestor(of: find.text(label), matching: find.byType(FPanelOptionRow)),
+        );
+
+    expect(rowFor('English').isSelected, isTrue);
+    expect(rowFor('Italian').isSelected, isFalse);
+
+    await tester.tap(find.text('Italian'));
+    await tester.pump();
+
+    // Nothing has changed in the player, so the tick can only be coming from the staged choice.
+    expect(rowFor('Italian').isSelected, isTrue);
+    expect(rowFor('English').isSelected, isFalse);
     await settlePlayer(tester);
   });
 

@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fplayer/fplayer.dart';
@@ -77,4 +78,32 @@ FPlayerUi uiOf(WidgetTester tester) =>
 /// pending timer fails the test for a reason unrelated to what it asserts.
 Future<void> settlePlayer(WidgetTester tester) async {
   await tester.pump(const Duration(seconds: 6));
+}
+
+/// Label of the panel row that holds focus, or null when focus is elsewhere.
+String? rowLabel(BuildContext context) =>
+    context.findAncestorWidgetOfExactType<FPanelOptionRow>()?.label;
+
+/// The panel footer button that holds focus, or null when focus is elsewhere.
+FPanelFooterButton? footerButton(BuildContext context) =>
+    context.findAncestorWidgetOfExactType<FPanelFooterButton>();
+
+/// Presses [key] until [until] holds for whatever has focus.
+///
+/// Written as a search rather than a fixed number of presses because the answer depends on
+/// geometry — how many rows the media offers, and whether the dialog is one column or two — and a
+/// test that hard-codes the count asserts the layout instead of the behaviour.
+Future<void> walk(
+  WidgetTester tester,
+  LogicalKeyboardKey key, {
+  required bool Function(BuildContext context) until,
+  int maxSteps = 12,
+}) async {
+  for (var step = 0; step <= maxSteps; step++) {
+    final context = FocusManager.instance.primaryFocus?.context;
+    if (context != null && until(context)) return;
+    await tester.sendKeyEvent(key);
+    await tester.pump();
+  }
+  fail('the D-pad never reached the target in $maxSteps presses of ${key.keyLabel}');
 }

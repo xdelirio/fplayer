@@ -192,8 +192,27 @@ class _FSettingsPanelState extends State<FSettingsPanel> {
   }
 }
 
+/// A choice a list holds instead of pushing to the player.
+///
+/// The settings panel has no use for this: it walks one axis at a time, so a tap there is a whole
+/// decision and the panel closes on it. The track dialog puts audio and subtitles side by side
+/// precisely because they are chosen together, so it stages both and applies them on the way out.
+@immutable
+class FTrackStaging {
+  const FTrackStaging({required this.selectedId, required this.onSelect});
+
+  /// Id of the row that reads as chosen. Null is the "Off" row for subtitles.
+  final String? selectedId;
+
+  /// Called with the chosen track's id, or null for "Off". Nothing reaches the player.
+  final ValueChanged<String?> onSelect;
+}
+
 /// The audio choices, as rows. Shared with the track dialog so the two cannot disagree.
-List<Widget> audioRows(FPlayerUi ui, {VoidCallback? onSelected}) {
+///
+/// [staging] turns the list from one that acts into one that only records; without it a tap
+/// selects the track and runs [onSelected], defaulting to closing the settings panel.
+List<Widget> audioRows(FPlayerUi ui, {VoidCallback? onSelected, FTrackStaging? staging}) {
   final tracks = ui.controller.tracks;
   return [
     for (final track in tracks.audio)
@@ -204,9 +223,13 @@ List<Widget> audioRows(FPlayerUi ui, {VoidCallback? onSelected}) {
           if (track.channelLabel != null) track.channelLabel!,
           if (track.isDescriptive) 'AD',
         ].join(' · '),
-        isSelected: track.isActive,
+        isSelected: staging == null ? track.isActive : staging.selectedId == track.id,
         isEnabled: track.isSupported,
         onTap: () {
+          if (staging != null) {
+            staging.onSelect(track.id);
+            return;
+          }
           ui.controller.selectAudioTrack(track);
           (onSelected ?? ui.closeSettings)();
         },
@@ -214,14 +237,19 @@ List<Widget> audioRows(FPlayerUi ui, {VoidCallback? onSelected}) {
   ];
 }
 
-List<Widget> subtitleRows(FPlayerUi ui, {VoidCallback? onSelected}) {
+/// The subtitle choices, as rows, with "Off" first. See [audioRows] for [staging].
+List<Widget> subtitleRows(FPlayerUi ui, {VoidCallback? onSelected, FTrackStaging? staging}) {
   final tracks = ui.controller.tracks;
   return [
     FPanelOptionRow(
       ui: ui,
       label: ui.localizations.off,
-      isSelected: tracks.selectedText == null,
+      isSelected: staging == null ? tracks.selectedText == null : staging.selectedId == null,
       onTap: () {
+        if (staging != null) {
+          staging.onSelect(null);
+          return;
+        }
         ui.controller.disableSubtitles();
         (onSelected ?? ui.closeSettings)();
       },
@@ -232,9 +260,14 @@ List<Widget> subtitleRows(FPlayerUi ui, {VoidCallback? onSelected}) {
         label: track.displayName,
         badge: track.isClosedCaption ? 'CC' : null,
         detail: track.isForced ? 'forced' : '',
-        isSelected: tracks.selectedText?.id == track.id,
+        isSelected:
+            staging == null ? tracks.selectedText?.id == track.id : staging.selectedId == track.id,
         isEnabled: track.isSupported,
         onTap: () {
+          if (staging != null) {
+            staging.onSelect(track.id);
+            return;
+          }
           ui.controller.selectTextTrack(track);
           (onSelected ?? ui.closeSettings)();
         },
@@ -242,9 +275,15 @@ List<Widget> subtitleRows(FPlayerUi ui, {VoidCallback? onSelected}) {
   ];
 }
 
-List<Widget> qualityRows(FPlayerUi ui, {VoidCallback? onSelected}) {
+/// The quality rungs, as rows.
+///
+/// [showBitrate] overrides `FUiConfig.showQualityBitrate` for this one list. The number is
+/// genuinely useful to someone watching their data and noise to everyone else, which is why it is
+/// a choice rather than a default either way.
+List<Widget> qualityRows(FPlayerUi ui, {VoidCallback? onSelected, bool? showBitrate}) {
   final tracks = ui.controller.tracks;
   final selected = tracks.selectedVideo;
+  final withBitrate = showBitrate ?? ui.config.showQualityBitrate;
 
   return [
     FPanelOptionRow(
@@ -262,7 +301,9 @@ List<Widget> qualityRows(FPlayerUi ui, {VoidCallback? onSelected}) {
         ui: ui,
         label: track.qualityLabel ?? track.displayName,
         badge: qualityBadge(track),
-        detail: track.bitrate == null ? '' : '${(track.bitrate! / 1000).round()} kbps',
+        detail: !withBitrate || track.bitrate == null
+            ? ''
+            : '${(track.bitrate! / 1000).round()} kbps',
         // A rung stands for every rendition of that size, so the pinned one lights up even when
         // it is one of the duplicates that was collapsed away.
         isSelected: selected != null &&

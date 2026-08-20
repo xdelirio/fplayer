@@ -160,12 +160,24 @@ void main() {
 
     // Walk to the second audio track and press OK. Rows used to be focusable but inert: a bare
     // `Focus` answers no key at all, so the panel was decorative on a remote.
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pump();
+    await walk(tester, LogicalKeyboardKey.arrowDown, until: (c) => rowLabel(c) == 'Italian');
     await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
-    expect(engine.calls.where((c) => c.startsWith('selectTrack')), isNotEmpty);
+    // Nothing has reached the engine yet: the dialog holds the choice until it is confirmed, so
+    // the remote has to be able to walk to Apply as well.
+    expect(engine.calls.where((c) => c.startsWith('selectTrack')), isEmpty);
+
+    await walk(tester, LogicalKeyboardKey.arrowDown, until: (c) => footerButton(c) != null);
+    await walk(
+      tester,
+      LogicalKeyboardKey.arrowRight,
+      until: (c) => footerButton(c)?.isPrimary ?? false,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+
+    expect(engine.calls, contains('selectTrack:audio:audio:0:1'));
   });
 
   testWidgets('hidden controls answer no key', (tester) async {

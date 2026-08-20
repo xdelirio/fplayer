@@ -172,6 +172,72 @@ class _FPanelGhostButtonState extends State<FPanelGhostButton> with FFocusHighli
   }
 }
 
+/// A panel's way out that commits or discards, rather than a row that does both at once.
+///
+/// Two weights: [isPrimary] fills with the accent for the action that confirms, and the other
+/// stays quiet so the pair reads as one decision with a default.
+class FPanelFooterButton extends StatefulWidget {
+  const FPanelFooterButton({
+    required this.theme,
+    required this.label,
+    required this.onTap,
+    this.isPrimary = false,
+    super.key,
+  });
+
+  final FPlayerTheme theme;
+  final String label;
+  final VoidCallback onTap;
+  final bool isPrimary;
+
+  @override
+  State<FPanelFooterButton> createState() => _FPanelFooterButtonState();
+}
+
+class _FPanelFooterButtonState extends State<FPanelFooterButton> with FFocusHighlight {
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+
+    return Semantics(
+      button: true,
+      child: focusable(
+        onActivate: widget.onTap,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            padding: EdgeInsets.symmetric(
+              horizontal: theme.spacing * 2,
+              vertical: theme.spacing * 0.9,
+            ),
+            decoration: BoxDecoration(
+              color: widget.isPrimary
+                  ? theme.accent
+                  : theme.foreground.withValues(alpha: showsFocusRing ? 0.22 : 0.10),
+              borderRadius: BorderRadius.circular(theme.spacing * 1.5),
+              border: Border.all(
+                color: showsFocusRing ? theme.accent : const Color(0x00000000),
+                width: 2,
+              ),
+            ),
+            child: Text(
+              widget.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.labelStyle.copyWith(
+                color: theme.foreground,
+                fontWeight: widget.isPrimary ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Puts focus inside a panel when it opens, and keeps it there.
 ///
 /// A panel that appears without taking focus is decorative on a remote: the viewer presses down

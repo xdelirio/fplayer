@@ -13,8 +13,30 @@
   8-bit changed nothing, and no error was ever raised, so the `fplayer_fvp`
   fallback never had a reason to engage either.
 
+### Changed
+
+- **The audio and subtitles dialog no longer closes on the first row tapped.**
+  It exists because the decision is one decision — Japanese audio with English
+  subtitles — and applying immediately undid that: the viewer who came to change
+  both had to open it twice, and the second trip re-selected the track they had
+  just picked. Choices are held and ticked in place, `Apply` pushes them
+  together, and `Cancel`, the close control and a tap outside all discard.
+  Applying sends only what moved, so confirming a subtitle change does not
+  re-select the audio track that was already playing. The settings panel keeps
+  its old behaviour: it walks one axis at a time, so a tap there is a whole
+  decision.
+
 ### Added
 
+- **`FUiConfig.showQualityBitrate`**, on by default, and a `showBitrate`
+  override on `qualityRows`. The kbps beside each rung is what separates two
+  renditions of the same size, and noise to an audience that reads `1080p` and
+  nothing else.
+- **`FPlayerLocalizations.cancel` and `.apply`**, for the dialog's two ways out.
+- **`FTrackStaging`**, which turns `audioRows` and `subtitleRows` from lists
+  that act into lists that only record. Public because the row builders already
+  were.
+- **`FPanelFooterButton`**, the primary/quiet pair a panel confirms with.
 - **`FPlayerConfig.renderMode`**, an `FVideoRenderMode` of `auto` (the new
   default), `texture` or `surfaceView`. `auto` resolves natively: a `SurfaceView`
   mounted as a platform view on televisions, the existing texture everywhere
