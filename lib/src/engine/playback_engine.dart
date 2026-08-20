@@ -42,6 +42,13 @@ abstract interface class FPlaybackEngine {
   /// there is none until a source is prepared and a fresh one per source.
   int? get textureId;
 
+  /// Native player id an Android platform view binds to, or null when this engine renders into a
+  /// texture instead.
+  ///
+  /// At most one of this and [textureId] is non-null: they are two ways of naming the same
+  /// output, and which one an engine uses is decided when it is created.
+  int? get platformViewId;
+
   /// Normalised notifications from the backend.
   Stream<FEngineSignal> get signals;
 

@@ -17,6 +17,7 @@ export 'src/config/network_config.dart';
 export 'src/config/pip_config.dart';
 export 'src/config/playback_config.dart';
 export 'src/config/player_config.dart';
+export 'src/config/render_mode.dart';
 export 'src/config/subtitle_style.dart';
 export 'src/config/tv_config.dart';
 export 'src/config/ui_config.dart';

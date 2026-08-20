@@ -85,8 +85,14 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
   /// Discrete transitions, for analytics and for reacting to specific moments.
   Stream<FPlayerEvent> get events => _events.stream;
 
-  /// Texture to render. Null until the engine has been created.
+  /// Texture to render. Null until the engine has been created, and null for the whole of a
+  /// player's life when it renders through a platform view instead — see [platformViewId].
   int? get textureId => _isCreated ? _engine.textureId : null;
+
+  /// Native player id to hand an Android platform view, or null when there is a [textureId]
+  /// to render instead. `FVideoSurface` picks between the two; apps that build their own output
+  /// have to handle both.
+  int? get platformViewId => _isCreated ? _engine.platformViewId : null;
 
   /// Whether the native player exists. The video surface cannot be built before this is true.
   bool get isEngineReady => _isCreated;

@@ -421,6 +421,22 @@ FDecoderConfig.dataSaver()   // capped at 720p / 2.5 Mbps
 
 A note on AV1: Android 12+ ships a software AV1 decoder in the platform and ExoPlayer picks it up by itself. On older devices with no hardware AV1 there is no decoder available; that case is covered by the alternative engine from phase 11.
 
+### Rendering
+
+Frames reach the widget tree one of two ways, and by default the choice is made for you:
+
+```dart
+FPlayerConfig(renderMode: FVideoRenderMode.auto)         // default: SurfaceView on TV, texture elsewhere
+FPlayerConfig(renderMode: FVideoRenderMode.texture)      // always a Flutter texture
+FPlayerConfig(renderMode: FVideoRenderMode.surfaceView)  // always an Android SurfaceView
+```
+
+A texture composites like any other widget and costs nothing extra, but a frame gets there through an `ImageReader` and a GPU import of an external image, which only works while the decoder writes a plain linear buffer. Television SoCs do not: their AV1 decoders hand over vendor-compressed frames — AFBC on Mali — and the import misreads those into green and magenta banding. The decode is fine; the handoff is not, which is why forcing 8-bit or a lower resolution changes nothing.
+
+A `SurfaceView` has no handoff. The buffer goes to SurfaceFlinger in whatever layout it arrived in, so the picture is correct whatever the decoder produced. It is mounted as a platform view under hybrid composition, which makes every Flutter frame drawn above the video cost a copy — worth it on a TV, wasteful on a phone. Hence `auto`.
+
+On the SurfaceView path `controller.textureId` is null for the player's whole life and `controller.platformViewId` is the id instead. `FVideoSurface` handles both; custom output widgets have to check the pair.
+
 ## Android setup
 
 The plugin declares `INTERNET` and nothing else: I don't want to force every app to justify permissions it may never use.

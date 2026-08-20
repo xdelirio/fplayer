@@ -51,6 +51,12 @@ class FplayerPlugin :
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         binding = flutterPluginBinding
         pip = PipController(flutterPluginBinding.applicationContext)
+        // Registered unconditionally: the factory builds nothing until Dart mounts a view, and a
+        // view is only mounted for a player that resolved to the SurfaceView path.
+        flutterPluginBinding.platformViewRegistry.registerViewFactory(
+            VideoPlatformViewFactory.VIEW_TYPE,
+            VideoPlatformViewFactory { playerId -> players[playerId] },
+        )
         // Constructed eagerly so the channels answer, but it builds nothing until Dart asks: an
         channel =
             MethodChannel(flutterPluginBinding.binaryMessenger, Channels.MAIN).also {
@@ -134,7 +140,10 @@ class FplayerPlugin :
                     result.success(
                         mapOf(
                             "playerId" to playerId,
+                            // Null on the SurfaceView path, where there is no texture and Dart
+                            // mounts a platform view instead.
                             "textureId" to host.textureId,
+                            "renderMode" to host.renderMode,
                         ),
                     )
                 } catch (e: Exception) {

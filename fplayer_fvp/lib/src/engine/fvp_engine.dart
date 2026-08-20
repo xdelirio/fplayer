@@ -65,6 +65,10 @@ class FFvpEngine implements FPlaybackEngine {
   /// the video surface checks: `-1` is libmdk's own sentinel and stays inside this class.
   int? get textureId => _textureId == noTexture ? null : _textureId;
 
+  /// Always null: libmdk renders into a texture and has no platform view path.
+  @override
+  int? get platformViewId => null;
+
   @override
   Stream<FEngineSignal> get signals => _signals.stream;
 

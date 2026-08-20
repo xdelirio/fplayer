@@ -27,6 +27,9 @@ class _StubEngine implements FPlaybackEngine {
   int? get textureId => texture;
 
   @override
+  int? get platformViewId => null;
+
+  @override
   Stream<FEngineSignal> get signals => _signals.stream;
 
   @override

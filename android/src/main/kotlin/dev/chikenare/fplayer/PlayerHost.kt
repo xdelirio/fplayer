@@ -1,9 +1,13 @@
 package dev.chikenare.fplayer
 
+import android.app.UiModeManager
 import android.content.Context
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Handler
 import android.os.Looper
 import android.util.Rational
+import android.view.Surface
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -24,6 +28,19 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.view.TextureRegistry
+
+/**
+ * Whether this is a television, which is what `renderMode: auto` keys off.
+ *
+ * Two checks because they answer slightly different questions: `UI_MODE_TYPE_TELEVISION` is the
+ * device's current mode, while `FEATURE_LEANBACK` is what the TV Play Store filters on. Devices
+ * exist that report only one of them.
+ */
+private fun isTelevision(context: Context): Boolean {
+    val uiMode = context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+    if (uiMode?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION) return true
+    return context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+}
 
 /**
  * One playback instance: an [ExoPlayer], the texture it renders into, and the pair of channels
@@ -49,8 +66,31 @@ internal class PlayerHost(
 
     // Created in `build`, so the try/catch that releases a half-built host covers it. As a
     // property initializer it ran before `init`, and a throw from anything after it left this
-    // texture registered with the engine for the life of the process.
+    // texture registered with the engine for the life of the process. Never created at all on
+    // the SurfaceView path, where there is no texture to render into.
     private lateinit var surfaceProducer: TextureRegistry.SurfaceProducer
+
+    /**
+     * Whether frames go to a `SurfaceView` handed over by a platform view rather than to a
+     * Flutter texture.
+     *
+     * `auto` resolves to the SurfaceView on televisions and to the texture everywhere else. Both
+     * halves of that are deliberate: TV decoders are the ones that write buffers the texture
+     * import cannot read — see `VideoPlatformView` — while on a phone the platform view forces
+     * hybrid composition, which makes every Flutter frame above the video cost a copy.
+     */
+    private val usesSurfaceView: Boolean =
+        when (config.string("renderMode")) {
+            "surfaceView" -> true
+            "texture" -> false
+            else -> isTelevision(context)
+        }
+
+    /** What `usesSurfaceView` resolved to, so Dart knows which widget to build. */
+    val renderMode: String get() = if (usesSurfaceView) "surfaceView" else "texture"
+
+    /** The SurfaceView's surface while one is attached, so a stale view cannot unhook a live one. */
+    private var externalSurface: Surface? = null
     private val methodChannel = MethodChannel(messenger, Channels.method(playerId))
     private val eventChannel = EventChannel(messenger, Channels.events(playerId))
 
@@ -123,7 +163,7 @@ internal class PlayerHost(
     private val seekStepMs: Long = config.map("playback").long("seekStepMs") ?: 10_000L
 
     /** Texture handed back to Dart so it can build a `Texture(textureId: ...)` widget. */
-    val textureId: Long get() = surfaceProducer.id()
+    val textureId: Long? get() = if (usesSurfaceView) null else surfaceProducer.id()
 
     private val progressTicker =
         object : Runnable {
@@ -148,7 +188,7 @@ internal class PlayerHost(
     }
 
     private fun build(config: Map<String, Any?>) {
-        surfaceProducer = textureRegistry.createSurfaceProducer()
+        if (!usesSurfaceView) surfaceProducer = textureRegistry.createSurfaceProducer()
 
         val playback = config.map("playback")
         progressIntervalMs = (playback.long("progressIntervalMs") ?: 250L).coerceAtLeast(50L)
@@ -197,7 +237,7 @@ internal class PlayerHost(
             },
         )
 
-        surfaceProducer.setCallback(this)
+        if (!usesSurfaceView) surfaceProducer.setCallback(this)
         attachSurface()
 
         val background = config.map("background")
@@ -507,10 +547,11 @@ internal class PlayerHost(
         resizeSurface(videoSize.width, videoSize.height)
         // The first frame is what makes PiP viable: the window needs a shape.
         emitPipState()
+        val (width, height) = displaySize(videoSize)
         emit(
             "videoSize",
-            "width" to videoSize.width,
-            "height" to videoSize.height,
+            "width" to width,
+            "height" to height,
             "rotationDegrees" to rotationCorrection(),
             "pixelAspectRatio" to videoSize.pixelWidthHeightRatio.toDouble(),
         )
@@ -703,6 +744,32 @@ internal class PlayerHost(
         needsSurface = true
     }
 
+    /**
+     * Take the `SurfaceView`'s surface as the output. Called by the platform view, not by Dart.
+     *
+     * There is no `needsSurface` bookkeeping here because there is nothing to rebuild: the view
+     * owns the surface and tells us when it appears and when it goes.
+     */
+    fun attachExternalSurface(surface: Surface) {
+        if (isDisposed || !usesSurfaceView) return
+        if (externalSurface === surface) return
+        externalSurface = surface
+        player.setVideoSurface(surface)
+    }
+
+    /**
+     * Drop [surface] if it is still the one in use.
+     *
+     * Matching on identity rather than clearing unconditionally: Flutter can build the
+     * replacement view before tearing the old one down, and an unconditional clear from the
+     * outgoing view would then blank the incoming one.
+     */
+    fun detachExternalSurface(surface: Surface) {
+        if (isDisposed || externalSurface !== surface) return
+        externalSurface = null
+        player.setVideoSurface(null)
+    }
+
     private fun attachSurface() {
         if (!needsSurface) return
         val surface = surfaceProducer.surface
@@ -721,6 +788,8 @@ internal class PlayerHost(
         width: Int,
         height: Int,
     ) {
+        // The SurfaceView sizes itself from its layout, and ExoPlayer scales the frame into it.
+        if (usesSurfaceView) return
         if (width <= 0 || height <= 0) return
         if (width == surfaceWidth && height == surfaceHeight) return
 
@@ -742,12 +811,13 @@ internal class PlayerHost(
         if (player.duration == C.TIME_UNSET && !isLive) return
 
         hasReportedInitialized = true
+        val (width, height) = displaySize(player.videoSize)
         val videoSize = player.videoSize
         emit(
             "initialized",
             "durationMs" to durationOrNull(),
-            "width" to videoSize.width,
-            "height" to videoSize.height,
+            "width" to width,
+            "height" to height,
             "rotationDegrees" to rotationCorrection(),
             "pixelAspectRatio" to videoSize.pixelWidthHeightRatio.toDouble(),
             "isLive" to isLive,
@@ -795,10 +865,34 @@ internal class PlayerHost(
      * Rotation Flutter must apply itself.
      *
      * When the texture backend already crops and rotates (SurfaceTexture path), the frames arrive
-     * upright and applying the format rotation again would double-rotate them.
+     * upright and applying the format rotation again would double-rotate them. Same on the
+     * SurfaceView path, for a different reason: Media3 puts the format's rotation on the codec as
+     * `MediaFormat.KEY_ROTATION`, and SurfaceFlinger honours that hint before the frame is shown.
+     * Only the `ImageReader` path ignores it, which is what leaves the work to Flutter.
      */
     private fun rotationCorrection(): Int =
-        if (surfaceProducer.handlesCropAndRotation()) 0 else player.videoFormat?.rotationDegrees ?: 0
+        when {
+            usesSurfaceView -> 0
+            surfaceProducer.handlesCropAndRotation() -> 0
+            else -> player.videoFormat?.rotationDegrees ?: 0
+        }
+
+    /**
+     * Frame size in the orientation Dart has to lay out.
+     *
+     * [rotationCorrection] reports zero for a quarter-turned video on the SurfaceView path, so
+     * the dimensions have to arrive already swapped: left as they are, a portrait video would be
+     * given a landscape box to sit in.
+     */
+    private fun displaySize(videoSize: VideoSize): Pair<Int, Int> {
+        val rotation = player.videoFormat?.rotationDegrees ?: 0
+        val isQuarterTurned = usesSurfaceView && (rotation == 90 || rotation == 270)
+        return if (isQuarterTurned) {
+            videoSize.height to videoSize.width
+        } else {
+            videoSize.width to videoSize.height
+        }
+    }
 
     private fun startTicker() {
         handler.removeCallbacks(progressTicker)

@@ -24,6 +24,10 @@ class FMedia3Engine implements FPlaybackEngine {
 
   int? _playerId;
   int? _textureId;
+
+  /// Which output the native side settled on. Decided there rather than here, because
+  /// `FVideoRenderMode.auto` needs to know what kind of device this is.
+  bool _usesPlatformView = false;
   MethodChannel? _channel;
   StreamSubscription<Object?>? _eventSubscription;
   bool _isDisposed = false;
@@ -34,6 +38,9 @@ class FMedia3Engine implements FPlaybackEngine {
 
   @override
   int? get textureId => _textureId;
+
+  @override
+  int? get platformViewId => _usesPlatformView ? _playerId : null;
 
   @override
   Stream<FEngineSignal> get signals => _signals.stream;
@@ -72,7 +79,9 @@ class FMedia3Engine implements FPlaybackEngine {
       }
 
       _playerId = playerId;
-      _textureId = (result['textureId']! as num).toInt();
+      _usesPlatformView = result['renderMode'] == 'surfaceView';
+      // Null on the platform view path, where the frames never become a texture.
+      _textureId = (result['textureId'] as num?)?.toInt();
       _channel = MethodChannel('dev.chikenare.fplayer/player/$playerId');
 
       _eventSubscription = EventChannel('dev.chikenare.fplayer/player/$playerId/events')
@@ -217,6 +226,7 @@ class FMedia3Engine implements FPlaybackEngine {
     _channel = null;
     _playerId = null;
     _textureId = null;
+    _usesPlatformView = false;
 
     try {
       if (playerId != null) {

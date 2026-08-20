@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Green and magenta banding over AV1 on Android TV.** The frames only ever
+  reached the screen through a Flutter texture, which means through an
+  `ImageReader` and a GPU import of an external image. That import needs a plain
+  linear buffer, and television AV1 decoders do not write one — Mali-based SoCs
+  hand their output over AFBC-compressed, and the import read that as stripes.
+  Nothing about the media was wrong, which is why re-encoding from 10-bit to
+  8-bit changed nothing, and no error was ever raised, so the `fplayer_fvp`
+  fallback never had a reason to engage either.
+
+### Added
+
+- **`FPlayerConfig.renderMode`**, an `FVideoRenderMode` of `auto` (the new
+  default), `texture` or `surfaceView`. `auto` resolves natively: a `SurfaceView`
+  mounted as a platform view on televisions, the existing texture everywhere
+  else. The SurfaceView path hands the decoder's buffer to SurfaceFlinger
+  untouched, so it survives any layout a decoder produces; it costs hybrid
+  composition, which is why it is not the default off a TV.
+- **`FPlayerController.platformViewId`**, non-null exactly when `textureId` is
+  null. `FVideoSurface` picks between the two on its own; a custom output widget
+  now has to handle both.
+
 ## 0.7.0
 
 A hardening release. Two review passes over the whole package — one hunting

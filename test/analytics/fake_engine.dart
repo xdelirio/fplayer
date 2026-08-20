@@ -22,6 +22,9 @@ class FakeEngine implements FPlaybackEngine {
   int get textureId => 1;
 
   @override
+  int? get platformViewId => null;
+
+  @override
   Future<void> create(FPlayerConfig config, {Map<String, Object?> extra = const {}}) async {}
 
   @override

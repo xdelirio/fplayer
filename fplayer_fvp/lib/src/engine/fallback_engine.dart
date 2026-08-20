@@ -90,6 +90,11 @@ class FFallbackEngine implements FPlaybackEngine {
     return id == null || id == FFvpEngine.noTexture ? null : id;
   }
 
+  /// Whichever engine is live decides this, and only Media3 ever answers with an id: the swap
+  /// to libmdk is also a swap back to a texture.
+  @override
+  int? get platformViewId => _active?.platformViewId;
+
   @override
   Stream<FEngineSignal> get signals => _signals.stream;
 

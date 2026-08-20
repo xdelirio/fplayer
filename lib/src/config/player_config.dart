@@ -6,6 +6,7 @@ import 'decoder_config.dart';
 import 'network_config.dart';
 import 'pip_config.dart';
 import 'playback_config.dart';
+import 'render_mode.dart';
 import 'subtitle_style.dart';
 
 /// Everything that shapes a player's behaviour, grouped by concern.
@@ -27,6 +28,7 @@ class FPlayerConfig {
     this.subtitleStyle = const FSubtitleStyle(),
     this.pip = const FPipConfig(),
     this.background = const FBackgroundConfig(),
+    this.renderMode = FVideoRenderMode.auto,
   });
 
   final FPlaybackConfig playback;
@@ -43,6 +45,10 @@ class FPlayerConfig {
   /// What playback does when the app leaves the screen, and whether a media session is published.
   final FBackgroundConfig background;
 
+  /// How frames reach the widget tree. Resolved natively when it is [FVideoRenderMode.auto], so
+  /// the value the engine settled on is not this field but `FPlayerController.platformViewId`.
+  final FVideoRenderMode renderMode;
+
   FPlayerConfig copyWith({
     FPlaybackConfig? playback,
     FBufferConfig? buffering,
@@ -51,6 +57,7 @@ class FPlayerConfig {
     FSubtitleStyle? subtitleStyle,
     FPipConfig? pip,
     FBackgroundConfig? background,
+    FVideoRenderMode? renderMode,
   }) =>
       FPlayerConfig(
         playback: playback ?? this.playback,
@@ -60,6 +67,7 @@ class FPlayerConfig {
         subtitleStyle: subtitleStyle ?? this.subtitleStyle,
         pip: pip ?? this.pip,
         background: background ?? this.background,
+        renderMode: renderMode ?? this.renderMode,
       );
 
   Map<String, Object?> toMap() => {
@@ -69,5 +77,6 @@ class FPlayerConfig {
         'decoding': decoding.toMap(),
         'pip': pip.toMap(),
         'background': background.toMap(),
+        'renderMode': renderMode.name,
       };
 }

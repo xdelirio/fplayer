@@ -16,8 +16,16 @@ class FakeEngine implements FPlaybackEngine {
   Duration position = Duration.zero;
   bool isDisposed = false;
 
+  /// Which output the engine claims. Mutable so a test can put the controller on the platform
+  /// view path, which the real engine only reaches on a television.
+  int? textureIdOverride = 42;
+  int? platformViewIdOverride;
+
   @override
-  int? get textureId => 42;
+  int? get textureId => textureIdOverride;
+
+  @override
+  int? get platformViewId => platformViewIdOverride;
 
   @override
   Stream<FEngineSignal> get signals => _signals.stream;
