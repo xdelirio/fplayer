@@ -85,25 +85,25 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('is there by default', (tester) async {
+    testWidgets('is absent by default, leaving the rungs', (tester) async {
       await openQuality(tester, const FUiConfig(showControlsOnStart: true));
-
-      expect(find.text('1080p'), findsOneWidget);
-      expect(find.text('2400 kbps'), findsOneWidget);
-      expect(find.text('1232 kbps'), findsOneWidget);
-
-      await settlePlayer(tester);
-    });
-
-    testWidgets('goes away when the config says so, leaving the rungs', (tester) async {
-      await openQuality(
-        tester,
-        const FUiConfig(showControlsOnStart: true, showQualityBitrate: false),
-      );
 
       expect(find.text('1080p'), findsOneWidget);
       expect(find.text('720p'), findsOneWidget);
       expect(find.textContaining('kbps'), findsNothing);
+
+      await settlePlayer(tester);
+    });
+
+    testWidgets('appears when the config asks for it', (tester) async {
+      await openQuality(
+        tester,
+        const FUiConfig(showControlsOnStart: true, showQualityBitrate: true),
+      );
+
+      expect(find.text('1080p'), findsOneWidget);
+      expect(find.text('2400 kbps'), findsOneWidget);
+      expect(find.text('1232 kbps'), findsOneWidget);
 
       await settlePlayer(tester);
     });

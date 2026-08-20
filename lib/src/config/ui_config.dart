@@ -83,7 +83,7 @@ class FUiConfig {
     this.showSpeedButton = true,
     this.showAudioSubtitlesButton = true,
     this.showQualityButton = true,
-    this.showQualityBitrate = true,
+    this.showQualityBitrate = false,
     this.showSettingsButton = false,
     this.showFitButton = false,
     this.showLockButton = true,
@@ -136,7 +136,7 @@ class FUiConfig {
         showSpeedButton = false,
         showAudioSubtitlesButton = false,
         showQualityButton = false,
-        showQualityBitrate = true,
+        showQualityBitrate = false,
         showSettingsButton = false,
         showFitButton = false,
         showLockButton = false,
@@ -205,8 +205,9 @@ class FUiConfig {
 
   /// Put each rung's bitrate beside it in the quality list — `1080p    4500 kbps`.
   ///
-  /// On by default because it is the number that separates two renditions of the same size. Turn
-  /// it off for an audience that reads `1080p` and nothing else.
+  /// Off by default: a quality menu is read by people who recognise `1080p`, and a number in
+  /// kbps beside it answers a question they did not ask. Turn it on for an audience that is
+  /// watching its data, or to tell apart two renditions of the same size.
   final bool showQualityBitrate;
 
   /// The catch-all panel. Off on touch, where the buttons above cover the same ground in one tap

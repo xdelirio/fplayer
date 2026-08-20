@@ -28,10 +28,10 @@
 
 ### Added
 
-- **`FUiConfig.showQualityBitrate`**, on by default, and a `showBitrate`
+- **`FUiConfig.showQualityBitrate`**, off by default, and a `showBitrate`
   override on `qualityRows`. The kbps beside each rung is what separates two
   renditions of the same size, and noise to an audience that reads `1080p` and
-  nothing else.
+  nothing else — so the menu stays plain unless it is asked for.
 - **`FPlayerLocalizations.cancel` and `.apply`**, for the dialog's two ways out.
 - **`FTrackStaging`**, which turns `audioRows` and `subtitleRows` from lists
   that act into lists that only record. Public because the row builders already
