@@ -11,6 +11,11 @@
   subtitles, tracks and cues come through as on Android; adaptive bitrate,
   PiP, media session, brightness and DRM do not, and say so. Native
   libraries are pulled per platform, so an Android build carries none of it.
+- **The example runs on macOS.** `example/macos` exists, the app picks its
+  engine through `createPlatformEngine()`, and the sandbox allows outgoing
+  connections. The loading timeout there is 60 s because the FFmpeg that
+  media_kit bundles probes every rendition of an HLS master before the first
+  frame, which takes 25-30 s on the multi-language demos.
 
 ### Removed
 

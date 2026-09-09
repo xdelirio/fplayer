@@ -492,7 +492,8 @@ Without that `<service>` the session is skipped silently and `hasMediaSession` s
 `example/` demonstrates HLS, DASH, MP4 with headers and an external subtitle verified against a local server, a storyboard, a queue with the up-next card and a source that fails on purpose, with a live state panel and the session metrics. **TV layout** opens the leanback screen: full screen, `FUiConfig.tv()`, driven entirely by a D-pad.
 
 ```bash
-cd example && flutter run
+cd example && flutter run            # Android
+cd example && flutter run -d macos   # macOS, through the mpv engine
 ```
 
 ## Tests

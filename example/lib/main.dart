@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fplayer/fplayer.dart';
+import 'package:fplayer_media_kit/fplayer_media_kit.dart';
 
 import 'tv_demo.dart';
 
@@ -131,6 +132,7 @@ class DemoPage extends StatefulWidget {
 
 class _DemoPageState extends State<DemoPage> {
   late final FPlayerController _controller = FPlayerController(
+    engine: createPlatformEngine(),
     config: const FPlayerConfig(
       playback: FPlaybackConfig(
         autoPlay: true,
@@ -139,7 +141,9 @@ class _DemoPageState extends State<DemoPage> {
       ),
       buffering: FBufferConfig.fastStart(),
       network: FNetworkConfig(
-        loadingTimeout: Duration(seconds: 20),
+        // Generous on purpose: the mpv engine's bundled FFmpeg probes every rendition of an HLS
+        // master before the first frame, which takes 25-30 s on the multi-language demos here.
+        loadingTimeout: Duration(seconds: 60),
         retry: FRetryPolicy(maxAttempts: 2),
       ),
       pip: FPipConfig(autoEnterOnLeave: true),

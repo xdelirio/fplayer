@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fplayer/fplayer.dart';
+import 'package:fplayer_media_kit/fplayer_media_kit.dart';
 
 /// The leanback layout, full screen, driven entirely by a remote.
 ///
@@ -15,6 +16,7 @@ class TvDemoPage extends StatefulWidget {
 
 class _TvDemoPageState extends State<TvDemoPage> {
   late final FPlayerController _controller = FPlayerController(
+    engine: createPlatformEngine(),
     config: const FPlayerConfig(
       playback: FPlaybackConfig(autoPlay: true, seekStep: Duration(seconds: 10)),
     ),
