@@ -143,9 +143,14 @@ class _FPlayerTextButtonState extends State<FPlayerTextButton> with FFocusHighli
             ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
+              // Active reads as a filled pill rather than a colour: the accent and the
+              // foreground are both white by default, and a label that only changed hue would
+              // change nothing.
               color: showsFocusRing
                   ? theme.accent.withValues(alpha: 0.22)
-                  : const Color(0x00000000),
+                  : widget.isActive
+                      ? theme.foreground.withValues(alpha: 0.16)
+                      : const Color(0x00000000),
               border: Border.all(
                 color: showsFocusRing ? theme.accent : const Color(0x00000000),
                 width: 2,
@@ -159,6 +164,7 @@ class _FPlayerTextButtonState extends State<FPlayerTextButton> with FFocusHighli
                     : widget.isActive
                         ? theme.accent
                         : theme.foreground,
+                fontWeight: widget.isActive ? FontWeight.w700 : null,
               ),
             ),
           ),

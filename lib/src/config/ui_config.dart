@@ -116,6 +116,8 @@ class FUiConfig {
           showFitButton: false,
           gestures: const FGestureConfig.none(),
           tv: const FTvConfig(mode: FTvMode.enabled),
+          // A leanback build run on a desktop for development is still a leanback build.
+          desktop: const FDesktopConfig(mode: FDesktopMode.disabled),
           theme: theme,
         );
 

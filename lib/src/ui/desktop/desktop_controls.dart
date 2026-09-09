@@ -68,23 +68,42 @@ class FDesktopControls extends StatelessWidget {
             ),
           ),
         ),
+        // Each bar takes every click inside it, including the gaps between its controls. The
+        // pointer layer under the chrome pauses on a click, and reaching for the seek bar and
+        // missing it by a few pixels is not a request to pause the film.
         Positioned(
           top: 0,
           left: 0,
           right: 0,
-          child: topBar ?? FControlsTopBar(ui: ui, title: title, subtitle: subtitle),
+          child: _DeadZone(
+            child: topBar ?? FControlsTopBar(ui: ui, title: title, subtitle: subtitle),
+          ),
         ),
         if (center != null) Center(child: center),
         Positioned(
           bottom: 0,
           left: 0,
           right: 0,
-          child: bottomBar ??
-              FDesktopBottomBar(ui: ui, actions: actions, previewBuilder: previewBuilder),
+          child: _DeadZone(
+            child: bottomBar ??
+                FDesktopBottomBar(ui: ui, actions: actions, previewBuilder: previewBuilder),
+          ),
         ),
       ],
     );
   }
+}
+
+/// Claims the hit test for its whole area, so nothing under it in the stack sees the click,
+/// while the controls inside still win the gesture arena.
+class _DeadZone extends StatelessWidget {
+  const _DeadZone({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      Listener(behavior: HitTestBehavior.opaque, child: child);
 }
 
 /// The seek bar with the whole transport under it: play, previous and next, skip, volume, time
@@ -113,6 +132,9 @@ class FDesktopBottomBar extends StatelessWidget {
     final controller = ui.controller;
     final value = controller.value;
     final isCompleted = value.isCompleted;
+    // A narrow inline player keeps play, mute, the time and the pickers; the skip buttons and
+    // the volume slider are the first to go, being the two things the keyboard also does.
+    final isNarrow = width < 480;
 
     return SafeArea(
       top: false,
@@ -156,7 +178,7 @@ class FDesktopBottomBar extends StatelessWidget {
                     onPressed: value.hasNext ? controller.next : null,
                   ),
                 ],
-                if (config.showSkipButtons) ...[
+                if (config.showSkipButtons && !isNarrow) ...[
                   FPlayerButton(
                     icon: Icons.replay_10,
                     theme: theme,
@@ -182,27 +204,40 @@ class FDesktopBottomBar extends StatelessWidget {
                     semanticLabel: value.isMuted ? l10n.unmute : l10n.mute,
                     onPressed: controller.toggleMute,
                   ),
-                  // No slider on a narrow player: the row already carries the transport and the
-                  // time, and a 72-wide bar squeezed beside them is not a control anyone can use.
-                  if (width >= 480) FVolumeSlider(ui: ui),
+                  if (!isNarrow) FVolumeSlider(ui: ui),
                 ],
                 SizedBox(width: theme.spacing * 1.5),
                 _Time(ui: ui),
-                const Spacer(),
-                ...buildSecondaryControls(
-                  context,
-                  ui,
-                  width: width,
-                  actions: actions,
-                  includeMute: false,
-                ),
-                if (config.showSettingsButton)
-                  FPlayerButton(
-                    icon: Icons.settings,
-                    theme: theme,
-                    semanticLabel: l10n.settings,
-                    onPressed: ui.openSettings,
+                // The pickers scroll rather than overflow, as on the touch bar: a named control,
+                // a quality summary and a speed are wider than a narrow player, and a row that
+                // runs off the edge takes the fullscreen button with it.
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ...buildSecondaryControls(
+                            context,
+                            ui,
+                            width: width,
+                            actions: actions,
+                            includeMute: false,
+                          ),
+                          if (config.showSettingsButton)
+                            FPlayerButton(
+                              icon: Icons.settings,
+                              theme: theme,
+                              semanticLabel: l10n.settings,
+                              onPressed: ui.openSettings,
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
+                ),
                 if (config.showFullscreenButton)
                   FPlayerButton(
                     icon: ui.isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,

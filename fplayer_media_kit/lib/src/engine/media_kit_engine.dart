@@ -62,7 +62,7 @@ class FMediaKitEngine implements FPlaybackEngine {
   bool _hasReportedInitialized = false;
   bool _hasCompleted = false;
 
-  /// True from a load's start until the media is described, which is when mpv giving up on the
+  /// True from the moment a load is mpv's until it plays, which is when mpv giving up on the
   /// file is the load failing. Trouble after that is mpv recovering on its own — a bad frame, a
   /// segment refetched — and failing the session over it would be worse than the glitch.
   bool _isOpening = false;
@@ -95,10 +95,13 @@ class FMediaKitEngine implements FPlaybackEngine {
 
   mk.NativePlayer get _native => _player!.platform! as mk.NativePlayer;
 
-  /// Null until mpv has rendered a frame into a texture of real size, which is what
-  /// `FPlaybackEngine` promises and what the video surface checks.
+  /// Null until mpv has rendered a frame into a texture of real size and described the picture
+  /// in it, which is what `FPlaybackEngine` promises and what the video surface checks. The
+  /// texture itself outlives a source change, still holding the last frame of the previous one;
+  /// the size is zeroed on every load, so it is not shown until the new picture is described —
+  /// and never for an audio-only source.
   @override
-  int? get textureId => _textureId;
+  int? get textureId => _size.isEmpty ? null : _textureId;
 
   /// Always null: libmpv renders into a texture and has no platform view path.
   @override
@@ -114,6 +117,20 @@ class FMediaKitEngine implements FPlaybackEngine {
     }
 
     mk.MediaKit.ensureInitialized();
+
+    try {
+      await _create(config);
+    } catch (_) {
+      // Half a player is worse than none: the controller's retry calls [create] again, and
+      // with `_player` set that would be refused for good.
+      await _player?.dispose();
+      _player = null;
+      _video = null;
+      rethrow;
+    }
+  }
+
+  Future<void> _create(FPlayerConfig config) async {
 
     _progressInterval = config.playback.progressInterval;
     _autoPlay = config.playback.autoPlay;
@@ -181,9 +198,7 @@ class FMediaKitEngine implements FPlaybackEngine {
     final generation = ++_sourceGeneration;
 
     _source = source;
-    _isOpening = true;
     _hasFailed = false;
-    _loadReason = null;
     _hasReportedInitialized = false;
     _hasCompleted = false;
     _releaseMediaState();
@@ -194,15 +209,32 @@ class FMediaKitEngine implements FPlaybackEngine {
     // exists, so anything said during [create] is said to nobody.
     if (_hasWindow) _emit(FEnginePipChanged(isActive: _windowBeforePip != null, isSupported: true));
 
+    // mpv options outlive the file they were set for. A track pinned by hand on the last source
+    // would open this one pinned to the same id instead of by language, and a `start` from a
+    // retry would open the next item forty minutes in.
+    await _native.setProperty('aid', 'auto');
+    await _native.setProperty('vid', 'auto');
+    await _native.setProperty('sid', _isTextDisabled ? 'no' : 'auto');
+    if (source.startAt == null) await _native.setProperty('start', 'none');
+
     await player.open(
       mk.Media(
         _mediaUriOf(source),
-        httpHeaders: source.headers.isEmpty ? null : source.headers,
+        // An empty map rather than null: null leaves the last source's headers in force, and
+        // an Authorization meant for one host must not reach the next.
+        httpHeaders: source.headers,
         start: source.startAt,
       ),
       play: _autoPlay,
     );
     if (_isDisposed || generation != _sourceGeneration) return;
+
+    // Only now does an error line belong to this load. media_kit stops the previous file on the
+    // way into `open`, and the failure that file was already logging — a 404, a DNS miss —
+    // arrives after that stop; set earlier, the flag turned a next-in-playlist press right
+    // after a failed item into a failed next item.
+    _isOpening = true;
+    _loadReason = null;
 
     for (final subtitle in source.subtitles) {
       await addSubtitle(subtitle);
@@ -266,8 +298,12 @@ class FMediaKitEngine implements FPlaybackEngine {
   Future<void> retry() async {
     final source = _source;
     if (source == null) return;
-    final resumeAt = _player?.state.position ?? Duration.zero;
-    await setSource(source.copyWith(startAt: resumeAt));
+    final position = _player?.state.position ?? Duration.zero;
+    // A load that never began has position zero, and zero is a position: it would replace the
+    // startAt the source was opened with, and the retry ladder would restart from the top.
+    await setSource(
+      source.copyWith(startAt: position > Duration.zero ? position : source.startAt),
+    );
   }
 
   @override
@@ -324,6 +360,7 @@ class FMediaKitEngine implements FPlaybackEngine {
   @override
   Future<void> addSubtitle(FSubtitleSource subtitle) async {
     if (_player == null) return;
+    if (subtitle.selectedByDefault) _isTextDisabled = false;
     await _native.command([
       'sub-add',
       mk.Media.normalizeURI(_uriOf(subtitle.kind, subtitle.uri, package: null)),
@@ -340,8 +377,10 @@ class FMediaKitEngine implements FPlaybackEngine {
   @override
   Future<bool> enterPip() async {
     if (!_hasWindow || _windowBeforePip != null) return false;
+    // Leaving fullscreen is animated and reported before it is done; the bounds read during it
+    // are the screen's, and that is what exitPip would restore. Not from fullscreen, then.
+    if (await windowManager.isFullScreen()) return false;
 
-    await windowManager.setFullScreen(false);
     _windowBeforePip = await windowManager.getBounds();
 
     final aspect = _size.isEmpty ? 16 / 9 : _size.width * _pixelAspectRatio / _size.height;
@@ -358,11 +397,11 @@ class FMediaKitEngine implements FPlaybackEngine {
   Future<void> exitPip() async {
     final bounds = _windowBeforePip;
     if (bounds == null) return;
-    _windowBeforePip = null;
 
     await windowManager.setAlwaysOnTop(false);
     await windowManager.setBounds(bounds);
     await windowManager.focus();
+    _windowBeforePip = null;
 
     _emit(const FEnginePipChanged(isActive: false, isSupported: true));
   }
@@ -455,7 +494,6 @@ class FMediaKitEngine implements FPlaybackEngine {
   void _reportInitialized() {
     if (_hasReportedInitialized) return;
     _hasReportedInitialized = true;
-    _isOpening = false;
     _emit(
       FEngineInitialized(
         duration: _duration,
@@ -480,8 +518,14 @@ class FMediaKitEngine implements FPlaybackEngine {
     final params = player.state.videoParams;
     // Cleared between files; a texture with nothing described behind it is not a picture yet.
     if (params.w == null || params.h == null) return;
-    _size = Size(params.w!.toDouble(), params.h!.toDouble());
-    _rotationDegrees = params.rotate ?? 0;
+    // The render API applies the rotation itself and media_kit sizes the texture to match, so
+    // the picture in it is already upright. Report the upright size and no rotation, or the
+    // surface would turn it a second time.
+    final isSideways = (params.rotate ?? 0) % 180 == 90;
+    _size = isSideways
+        ? Size(params.h!.toDouble(), params.w!.toDouble())
+        : Size(params.w!.toDouble(), params.h!.toDouble());
+    _rotationDegrees = 0;
     _pixelAspectRatio = params.par ?? 1;
 
     _emit(
@@ -536,6 +580,14 @@ class FMediaKitEngine implements FPlaybackEngine {
 
   void _onBufferingChanged(bool isBuffering) {
     if (_hasCompleted && !isBuffering) return;
+    if (!isBuffering) {
+      // The stop media_kit performs on the way into `open` reports "not buffering" for the
+      // file it just dropped; before the new one is described, that is not readiness.
+      if (!_hasReportedInitialized) return;
+      // Playing is the end of the opening window: a load that dies after its track list — no
+      // playable stream, a codec that would not open — is still a failed load until here.
+      _isOpening = false;
+    }
     _emit(
       FEnginePlaybackStateChanged(
         isBuffering ? FEnginePlaybackState.buffering : FEnginePlaybackState.ready,
@@ -565,13 +617,14 @@ class FMediaKitEngine implements FPlaybackEngine {
   }
 
   void _onTracksChanged(mk.Tracks tracks) {
-    _tracks = tracks;
-    // An empty list is mpv between files, not a description of one.
+    // An empty list is mpv between files — or at the end of one — not a description of it,
+    // and not something to describe the menus from later.
     final hasAny =
         tracks.video.any((t) => isRealTrackId(t.id)) ||
         tracks.audio.any((t) => isRealTrackId(t.id)) ||
         tracks.subtitle.any((t) => isRealTrackId(t.id));
     if (!hasAny) return;
+    _tracks = tracks;
     if (!_hasReportedInitialized) {
       _onDurationChanged(_player?.state.duration ?? Duration.zero);
       _reportInitialized();

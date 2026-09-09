@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 
 import '../config/fullscreen_config.dart';
 import '../config/subtitle_style.dart';
+import '../config/tv_config.dart';
 import '../config/ui_config.dart';
 import '../core/player_controller.dart';
 import '../core/player_status.dart';
@@ -524,9 +525,10 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
         ),
         child: FTvLayer(
           ui: this,
-          config: widget.config.tv,
+          config: _tvConfig,
           child: _isDesktop
               ? FDesktopLayer(
+                  key: _desktopLayer,
                   ui: this,
                   config: widget.config.desktop,
                   child: _buildStack(context),
@@ -603,7 +605,13 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
               // times a second; now that they no longer do, pressing mute or skip would let the
               // chrome fade out from under the viewer's finger.
               child: Listener(
-                onPointerDown: (_) => showControls(),
+                onPointerDown: (_) {
+                  showControls();
+                  // A click on a button is as much a claim on the keyboard as a click on the
+                  // picture: pressing Pause in the bar and then Space should not type a space
+                  // into whatever field held focus before.
+                  _desktopLayer.currentState?.focusNode.requestFocus();
+                },
                 // Chrome that is not on screen must not be reachable either. Left focusable, the
                 // autofocused play button keeps holding focus while invisible, so OK toggles
                 // playback with nothing to show for it — and a screen reader walks a row of
@@ -663,9 +671,27 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
         FPlayerPanel.settings => FSettingsPanel(ui: this),
       };
 
+  /// The desktop layer, for handing it the keyboard from a click on the chrome.
+  final GlobalKey<FDesktopLayerState> _desktopLayer = GlobalKey<FDesktopLayerState>();
+
   /// Whether the mouse-and-keyboard chrome is in force: `FDesktopControls` in place of
   /// `FControlsOverlay`, and the pointer and key handling that goes with it.
-  bool get _isDesktop => isDesktopActive(widget.config.desktop);
+  ///
+  /// A remote layout asked for by name wins: `FTvMode.enabled` on a desktop is someone running a
+  /// leanback build on their workstation, and they want to see the leanback build.
+  bool get _isDesktop =>
+      widget.config.tv.mode != FTvMode.enabled && isDesktopActive(widget.config.desktop);
+
+  /// The remote config the TV layer is given.
+  ///
+  /// Under the desktop layout, `auto` is pinned to off. The desktop layer answers most keys,
+  /// but the ones it leaves alone — Enter, an arrow while a panel is open — bubble up to the TV
+  /// layer, and one of those was enough for `auto` to arm the remote layout for good: focus
+  /// rings on, the speed control gone, and the parked focus node taking the shortcuts' focus
+  /// away after every auto-hide.
+  FTvConfig get _tvConfig => _isDesktop && widget.config.tv.mode == FTvMode.auto
+      ? widget.config.tv.copyWith(mode: FTvMode.disabled)
+      : widget.config.tv;
 
   /// The chrome for the input at hand. Both take the same bands from the same builders; only
   /// what fills in when a builder is not given differs.

@@ -41,7 +41,7 @@ const _demos = <_Demo>[
   _Demo(
     'DASH · Angel One (audio en/es/de/fr + subs el/fr/en)',
     FPlayerSource.network(
-      'https://cdn.tibibyte.com/bcdn_token=HS256-M_utLdACZHXC65Ltn1N_Tjn_iOAHY5dlVugDDqFb1P8&token_path=%2F01M060K2FGA3E5ZPB5SHVCGCAF%2Fplay%2F&expires=1786930619/01M060K2FGA3E5ZPB5SHVCGCAF/play/01M060QJ67AEWXVNTWMTPCRRQ0.mpd',
+      'https://cdn.tibibyte.com/bcdn_token=HS256-RXKyTG2StPX_ycR4R1Au4H8mtPoKImF2MPa6Kjjyb-U&token_path=%2F01M1JF572X37FPAYC4G87SY7N7%2Fplay%2F&expires=1788940101/01M1JF572X37FPAYC4G87SY7N7/play/01M22AEZPMQY1M4CMW2CMZ5Z0A.mpd',
       type: FSourceType.dash,
       title: 'Angel One',
       subtitle: 'Muxed multi-audio and subtitles',

@@ -25,6 +25,28 @@
   picture to on a desktop. Both through `window_manager`, in
   `fplayer_media_kit` only.
 
+### Fixed
+
+- **A desktop with the default config could slip into the remote layout.** A
+  key the desktop layer leaves alone — Enter, an arrow while a panel is open —
+  reached the TV layer, whose `auto` mode took it as a remote and armed itself
+  for good: focus rings on, the speed control gone, the shortcuts dead after
+  every auto-hide. Under the desktop layout `auto` is now pinned off, and a
+  build that asks for `FTvMode.enabled` keeps the leanback layout on a desktop.
+- **The desktop bar overflowed on a narrow player** and a click in the gaps
+  between its controls paused the film. The pickers scroll as on the touch
+  bar, the skip buttons and the slider go first below 480 px, and both bars
+  swallow every click inside them.
+- **mpv engine: a load failing right before the next one failed the next one
+  too.** media_kit stops the old file on the way into `open`, and its pending
+  "Failed to open" arrived after the flags for the new load were set. Also:
+  `startAt` and HTTP headers no longer leak from one source into the next, a
+  retry of a load that never began keeps the source's own `startAt`, a track
+  pinned by hand no longer pins the next file, a rotated phone video is no
+  longer turned twice, an audio-only source no longer shows the last frame of
+  the previous video, the stop inside `open` no longer flashes `ready`, and a
+  load that dies after its track list still fails instead of spinning.
+
 ### Changed
 
 - **The accent is white.** `FPlayerTheme.accent` — the progress fill, the
