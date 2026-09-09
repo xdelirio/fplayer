@@ -1,6 +1,6 @@
 # fplayer
 
-A Flutter video player built on **Media3/ExoPlayer**, meant to be shared across several apps.
+A Flutter video player built on **Media3/ExoPlayer** on Android and **libmpv** everywhere else, meant to be shared across several apps.
 
 > **[Integration guide](docs/integration.html)** — how to drop it into an app: installation, what the manifest needs depending on the features you use, recipes, and the details that bite.
 
@@ -26,7 +26,7 @@ A Flutter video player built on **Media3/ExoPlayer**, meant to be shared across 
 - **Session analytics**: real watched time, startup, rebuffers, quality changes
 - Loose layers (`FVideoSurface`, `FSubtitleView`, `FProgressBar`) for building your own UI
 
-Outside the base package: the `fvp` engine for AV1 on older Android lives in `fplayer_fvp`, because it weighs 11.5 MB per ABI. It is consumed as a path or git dependency rather than from pub.dev. Offline downloads and Cast are not implemented.
+Outside the base package: the libmpv engine for iOS, macOS, Windows and Linux lives in `fplayer_media_kit`, and the `fvp` engine for AV1 on older Android in `fplayer_fvp`, because it weighs 11.5 MB per ABI. Both siblings are consumed as path or git dependencies rather than from pub.dev. Offline downloads and Cast are not implemented.
 
 ## Requirements
 
@@ -34,7 +34,7 @@ Outside the base package: the `fvp` engine for AV1 on older Android lives in `fp
 |---|---|
 | Flutter | 3.44+ |
 | Android | minSdk 24, compileSdk 36 |
-| Platforms | Android (for now) |
+| Platforms | Android with the base package; iOS, macOS, Windows and Linux with `fplayer_media_kit` |
 
 ## Usage
 
@@ -438,6 +438,16 @@ A `SurfaceView` has no handoff. The buffer goes to SurfaceFlinger in whatever la
 
 On the SurfaceView path `controller.textureId` is null for the player's whole life and `controller.platformViewId` is the id instead. `FVideoSurface` handles both; custom output widgets have to check the pair.
 
+### Other platforms
+
+The base package plays through Media3, which exists only on Android. For everything else, add the sibling `fplayer_media_kit` and let it pick the engine for the platform the app is running on:
+
+```dart
+FPlayerController(engine: createPlatformEngine())
+```
+
+That is Media3 on Android — with everything above intact — and libmpv on iOS, macOS, Windows and Linux. The mpv engine plays the same sources, headers and side-loaded subtitles, exposes the same tracks and renders subtitles through the same views; what it does not do is listed on `FMediaKitEngine`: no adaptive bitrate (an HLS or DASH variant is picked at load time and offered as a video track), no Picture-in-Picture, media session or brightness, no DRM, and cues without their positioning. The native libraries are pulled per platform, so an Android build carries none of it.
+
 ## Android setup
 
 The plugin declares `INTERNET` and nothing else: I don't want to force every app to justify permissions it may never use.
@@ -490,6 +500,7 @@ cd example && flutter run
 ```bash
 flutter test                           # the package
 cd fplayer_fvp && flutter test         # the libmdk engine sibling
+cd fplayer_media_kit && flutter test   # the libmpv engine sibling
 ```
 
 ## License

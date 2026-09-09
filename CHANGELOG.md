@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- **`fplayer_media_kit`.** A sibling package with a libmpv engine for iOS, macOS,
+  Windows and Linux, behind the same `FPlaybackEngine` interface the Media3
+  and libmdk engines implement. `createPlatformEngine()` hands a controller
+  Media3 on Android and mpv anywhere else. Sources, headers, side-loaded
+  subtitles, tracks and cues come through as on Android; adaptive bitrate,
+  PiP, media session, brightness and DRM do not, and say so. Native
+  libraries are pulled per platform, so an Android build carries none of it.
+
 ### Removed
 
 - **`fplayer_telemetry`.** The sibling package that queued `FPlayerObserver`

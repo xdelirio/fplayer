@@ -1,6 +1,6 @@
 # fplayer — Architecture plan and roadmap
 
-> Status: roadmap complete. Every phase implemented and verified on device. Android-only.
+> Status: roadmap complete. Every phase implemented and verified on device. Android in the base package; the other platforms through the `fplayer_media_kit` sibling.
 > Flutter 3.47 · Dart 3.13 · minSdk 24 (Flutter's current floor) · compileSdk 36 · Media3 1.11.0
 >
 > **Decisions made** — engine: native Media3 plugin · DRM: not required (hooks only, phase 11) · telemetry: none — `fplayer` exposes `FPlayerObserver` and stops there

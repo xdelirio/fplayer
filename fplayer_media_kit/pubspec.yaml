@@ -1,0 +1,31 @@
+name: fplayer_media_kit
+description: "A libmpv engine for fplayer, for every platform that is not Android: iOS, macOS, Windows and Linux."
+version: 0.1.0
+homepage: https://github.com/chikenare/fplayer
+repository: https://github.com/chikenare/fplayer
+
+# Depends on fplayer by path while they live in one repository.
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  fplayer:
+    path: ../
+  media_kit: ^1.2.0
+  media_kit_video: ^2.0.1
+  # One native package per platform rather than `media_kit_libs_video`, which would also drag
+  # libmpv into Android — where fplayer plays through Media3 and never touches this engine.
+  media_kit_libs_ios_video: ^1.1.4
+  media_kit_libs_macos_video: ^1.1.4
+  media_kit_libs_windows_video: ^1.0.11
+  media_kit_libs_linux: ^1.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
