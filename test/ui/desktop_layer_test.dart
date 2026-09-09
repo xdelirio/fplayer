@@ -357,6 +357,48 @@ void main() {
     );
   });
 
+  group('a host-owned full-window player', () {
+    testWidgets('F fills the window instead of closing the player', (tester) async {
+      tester.view.physicalSize = const Size(800, 450);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: MediaQuery(
+            data: const MediaQueryData(),
+            child: Navigator(
+              onGenerateRoute: (settings) => PageRouteBuilder<void>(
+                pageBuilder: (context, _, _) => FPlayerView(
+                  controller: controller,
+                  config: const FUiConfig.desktop(),
+                  isFullscreen: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await controller.open(const FPlayerSource.network('https://example.com/a.mp4'));
+      engine.becomeReady(duration: const Duration(minutes: 10));
+      await tester.pump();
+      expect(uiOf(tester).isFullscreen, isFalse, reason: 'the window is not fullscreen yet');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.pump();
+      expect(find.byType(FPlayerView), findsOneWidget, reason: 'the route stays');
+      expect(engine.calls, contains('setWindowFullscreen:true'));
+      expect(uiOf(tester).isFullscreen, isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(find.byType(FPlayerView), findsOneWidget);
+      expect(engine.calls, contains('setWindowFullscreen:false'));
+      expect(uiOf(tester).isFullscreen, isFalse);
+      await settlePlayer(tester);
+    });
+  });
+
   group('volume slider', () {
     testWidgets('a click sets the level, a drag follows the pointer', (tester) async {
       await ready(tester);

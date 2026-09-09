@@ -237,8 +237,21 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   @override
   FVideoFit get fit => _fit;
 
+  /// On a desktop, a page the host built as its own full-window player (`isFullscreen: true`
+  /// on a route that is not ours) is fullscreen only while the window is: there, the answer
+  /// comes from the window rather than from the widget.
   @override
-  bool get isFullscreen => widget.isFullscreen;
+  bool get isFullscreen =>
+      _isDesktop && widget.isFullscreen && !_isOwnFullscreenRoute
+          ? _isWindowFullscreen
+          : widget.isFullscreen;
+
+  /// Whether this view is the copy `toggleFullscreen` pushed, rather than a page the host built
+  /// with `isFullscreen: true` on a route of its own.
+  bool get _isOwnFullscreenRoute => ModalRoute.of(context) is FFullscreenRoute;
+
+  /// Whether this view asked the window to fill the screen and has not asked it back yet.
+  bool _isWindowFullscreen = false;
 
   @override
   bool get isSettingsOpen => _panel != null;
@@ -344,6 +357,17 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   @override
   Future<void> toggleFullscreen() async {
     if (widget.isFullscreen) {
+      // A host's own full-window player on a desktop has no route to leave: fullscreen there
+      // means the window, and F or a double-click fills the screen rather than closing the
+      // player. Our own pushed copy pops as before, and the view that pushed it gives the
+      // window back.
+      if (_isDesktop && !_isOwnFullscreenRoute) {
+        final next = !_isWindowFullscreen;
+        setState(() => _isWindowFullscreen = next);
+        widget.onFullscreenChanged?.call(next);
+        await widget.controller.setWindowFullscreen(fullscreen: next);
+        return;
+      }
       _leaveFullscreen();
       return;
     }

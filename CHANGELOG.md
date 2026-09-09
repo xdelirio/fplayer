@@ -27,6 +27,12 @@
 
 ### Fixed
 
+- **F closed a host's own full-window player on a desktop.** `FPlayerView`
+  with `isFullscreen: true` on a route the host built popped that route on
+  every fullscreen toggle — the button, F, a double-click — which on a desktop
+  closed the player instead of filling the screen. There, fullscreen is the
+  window's: the toggle sets it and `isFullscreen` reads it, and only the copy
+  the player itself pushed still pops.
 - **A desktop with the default config could slip into the remote layout.** A
   key the desktop layer leaves alone — Enter, an arrow while a panel is open —
   reached the TV layer, whose `auto` mode took it as a remote and armed itself

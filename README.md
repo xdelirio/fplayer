@@ -160,6 +160,12 @@ On macOS, Windows and Linux the chrome is a different set of widgets, `FDesktopC
 - **Click** on the picture pauses, **double-click** goes fullscreen, the **wheel** changes the volume. Each is a flag on `FDesktopConfig`.
 - **Space** or **K** play and pause, **←/→** seek by `seekStep`, **↑/↓** change the volume by `volumeStep`, **M** mutes, **F** toggles fullscreen and **Escape** leaves it or closes a panel. In the floating Picture-in-Picture window, **F**, **Escape** and a double-click all bring the player back. `keyboardShortcuts: false` turns them off; the media keys work regardless.
 - The player takes keyboard focus when it appears, so the shortcuts work before the first click. `autofocus: false` for a player beside a text field.
+- A page you build as your own full-window player — `FPlayerView(isFullscreen: true)` on a route of yours — treats fullscreen as the window's: F, the button and a double-click fill the screen and give it back, and never close the page. Only the copy the player itself pushes pops on exit.
+
+Two things about depending on it:
+
+- **A git dependency on both packages** needs `fplayer` pinned to the same revision as `fplayer_media_kit` (or a `dependency_overrides: fplayer:` entry): the sibling depends on `fplayer` by `path: ../`, which pub resolves to that checkout, and two different descriptions of one package do not resolve together.
+- **Linux** builds `media_kit_video` against `libmpv-dev` and `libepoxy-dev`, and needs libmpv at runtime: `media_kit_libs_linux` ships only mimalloc, so a bundle such as an AppImage has to carry libmpv itself.
 
 ### Gestures
 
