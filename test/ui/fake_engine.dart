@@ -118,6 +118,10 @@ class FakeEngine implements FPlaybackEngine {
   @override
   Future<void> exitPip() async => calls.add('exitPip');
 
+  @override
+  Future<void> setWindowFullscreen({required bool fullscreen}) async =>
+      calls.add('setWindowFullscreen:$fullscreen');
+
   double windowBrightness = 0.5;
 
   @override

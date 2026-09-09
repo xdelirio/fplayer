@@ -91,6 +91,10 @@ class _StubEngine implements FPlaybackEngine {
   Future<void> exitPip() async => calls.add('exitPip');
 
   @override
+  Future<void> setWindowFullscreen({required bool fullscreen}) async =>
+      calls.add('setWindowFullscreen');
+
+  @override
   Future<void> setBrightness(double? brightness) async => calls.add('setBrightness');
 
   @override

@@ -195,6 +195,47 @@ void main() {
     });
   });
 
+  group('window', () {
+    testWidgets('fullscreen asks the engine for the window, and gives it back', (tester) async {
+      await ready(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(engine.calls, contains('setWindowFullscreen:true'));
+      expect(engine.calls, isNot(contains('setWindowFullscreen:false')));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(engine.calls, contains('setWindowFullscreen:false'));
+      await settlePlayer(tester);
+    });
+
+    testWidgets('the floating PiP window keeps the pointer, and leaves on Escape or a double-click',
+        (tester) async {
+      await ready(tester);
+      engine.emit(const FEnginePipChanged(isActive: true, isSupported: true));
+      await tester.pump();
+      expect(controller.value.isPipActive, isTrue);
+      // Nothing but the picture and the pointer layer: no bar, no title.
+      expect(find.byType(FDesktopControls), findsNothing);
+      expect(find.byType(FDesktopPointerLayer), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(engine.calls, contains('exitPip'));
+      engine.calls.clear();
+
+      await tester.tapAt(const Offset(400, 225));
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(const Offset(400, 225));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(engine.calls, contains('exitPip'));
+      expect(uiOf(tester).isFullscreen, isFalse, reason: 'a double-click in PiP is not fullscreen');
+      await settlePlayer(tester);
+    });
+  });
+
   group('volume slider', () {
     testWidgets('a click sets the level, a drag follows the pointer', (tester) async {
       await ready(tester);

@@ -107,6 +107,13 @@ abstract interface class FPlaybackEngine {
   /// Restores the Activity to full screen from Picture-in-Picture.
   Future<void> exitPip();
 
+  /// Puts the host window into the platform's fullscreen mode, or takes it out of it.
+  ///
+  /// A desktop concern. On Android the fullscreen route and the system bars are the whole
+  /// story and the engine does nothing; an engine that owns a window is what makes it fill the
+  /// screen when the viewer asks, and give the screen back when they leave.
+  Future<void> setWindowFullscreen({required bool fullscreen});
+
   /// Sets the host window's brightness, `0.0` to `1.0`, or restores the system value with null.
   ///
   /// Scoped to the window rather than the device setting, so leaving the app puts the screen back

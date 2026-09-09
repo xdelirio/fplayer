@@ -364,6 +364,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
       ),
     );
     unawaited(SystemChrome.setEnabledSystemUIMode(fullscreen.systemUiMode));
+    unawaited(widget.controller.setWindowFullscreen(fullscreen: true));
 
     // The same controller, and therefore the same texture, so entering fullscreen costs a route
     // transition rather than a reload.
@@ -374,6 +375,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
     );
 
     _isEnteringFullscreen = false;
+    unawaited(widget.controller.setWindowFullscreen(fullscreen: false));
     unawaited(SystemChrome.setPreferredOrientations(fullscreen.restoreOrientations));
     unawaited(SystemChrome.setEnabledSystemUIMode(fullscreen.restoreSystemUiMode));
     widget.onFullscreenChanged?.call(false);
@@ -548,10 +550,20 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
     // In Picture-in-Picture the system shows the whole Activity in a thumbnail. Anything but the
     // picture is unreadable at that size and steals room from it.
     if (value.isPipActive) {
-      return FVideoSurface(
+      final surface = FVideoSurface(
         controller: widget.controller,
         fit: FVideoFit.contain,
         backgroundColor: widget.backgroundColor,
+      );
+      if (!_isDesktop) return surface;
+      // A desktop's floating window has no system chrome to bring the player back with, so the
+      // pointer keeps its say: click pauses, double-click leaves.
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          surface,
+          FDesktopPointerLayer(ui: this, config: widget.config.desktop),
+        ],
       );
     }
 

@@ -122,9 +122,9 @@ class FUiConfig {
   /// Preset for a mouse-and-keyboard build: the transport lives in the bottom bar, a click on the
   /// picture pauses, the keys do what they do in every desktop player.
   ///
-  /// The controls that only make sense on a phone — lock, Picture-in-Picture — are off, and so
-  /// is the back button: a desktop window has its own way out. Turn any of them back on with
-  /// `copyWith`.
+  /// The lock control is off — it exists to survive a hand on the screen — and so is the back
+  /// button: a desktop window has its own way out. Turn either back on with `copyWith`.
+  /// Picture-in-Picture stays: the mpv engine answers it with a floating window.
   const FUiConfig.desktop({FPlayerTheme theme = const FPlayerTheme()})
       : this(
           // A mouse is usually already over the player when it appears; show the chrome once and
@@ -132,7 +132,6 @@ class FUiConfig {
           showControlsOnStart: true,
           showBackButton: false,
           showLockButton: false,
-          showPipButton: false,
           // Arrow keys seek and change the volume here. Left on auto, the first of them would
           // switch the player to the remote layout instead.
           tv: const FTvConfig(mode: FTvMode.disabled),

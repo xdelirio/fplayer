@@ -154,11 +154,11 @@ FUiConfig(tv: FTvConfig(mode: FTvMode.auto))   // the default
 FUiConfig(desktop: FDesktopConfig(mode: FDesktopMode.auto))   // the default
 ```
 
-On macOS, Windows and Linux the chrome is a different set of widgets, `FDesktopControls` in place of `FControlsOverlay`, laid out the way desktop players are: the transport moves out of the middle of the picture into the bottom bar, next to a volume slider and a `1:23 / 12:14` readout; the pickers, the app's `actions` and fullscreen sit on the right. The top row, the seek bar and every panel are the same widgets as on touch, and the same `*Builder` parameters replace any band. `FUiConfig.desktop()` is the preset that also drops the phone-only controls — back, lock, Picture-in-Picture — and switches the remote layout off so the arrow keys are free.
+On macOS, Windows and Linux the chrome is a different set of widgets, `FDesktopControls` in place of `FControlsOverlay`, laid out the way desktop players are: the transport moves out of the middle of the picture into the bottom bar, next to a volume slider and a `1:23 / 12:14` readout; the pickers, the app's `actions` and fullscreen sit on the right. The top row, the seek bar and every panel are the same widgets as on touch, and the same `*Builder` parameters replace any band. `FUiConfig.desktop()` is the preset that also drops back and lock and switches the remote layout off so the arrow keys are free.
 
 - **Moving the mouse** reveals the controls; leaving the player hides them; an idle pointer over a playing picture disappears with them.
 - **Click** on the picture pauses, **double-click** goes fullscreen, the **wheel** changes the volume. Each is a flag on `FDesktopConfig`.
-- **Space** or **K** play and pause, **←/→** seek by `seekStep`, **↑/↓** change the volume by `volumeStep`, **M** mutes, **F** toggles fullscreen and **Escape** leaves it or closes a panel. `keyboardShortcuts: false` turns them off; the media keys work regardless.
+- **Space** or **K** play and pause, **←/→** seek by `seekStep`, **↑/↓** change the volume by `volumeStep`, **M** mutes, **F** toggles fullscreen and **Escape** leaves it or closes a panel. In the floating Picture-in-Picture window, **F**, **Escape** and a double-click all bring the player back. `keyboardShortcuts: false` turns them off; the media keys work regardless.
 - The player takes keyboard focus when it appears, so the shortcuts work before the first click. `autofocus: false` for a player beside a text field.
 
 ### Gestures
@@ -459,7 +459,7 @@ The base package plays through Media3, which exists only on Android. For everyth
 FPlayerController(engine: createPlatformEngine())
 ```
 
-That is Media3 on Android — with everything above intact — and libmpv on iOS, macOS, Windows and Linux. The mpv engine plays the same sources, headers and side-loaded subtitles, exposes the same tracks and renders subtitles through the same views; what it does not do is listed on `FMediaKitEngine`: no adaptive bitrate (an HLS or DASH variant is picked at load time and offered as a video track), no Picture-in-Picture, media session or brightness, no DRM, and cues without their positioning. The native libraries are pulled per platform, so an Android build carries none of it.
+That is Media3 on Android — with everything above intact — and libmpv on iOS, macOS, Windows and Linux. The mpv engine plays the same sources, headers and side-loaded subtitles, exposes the same tracks and renders subtitles through the same views; fullscreen takes the window into the platform's own mode and Picture-in-Picture becomes a floating always-on-top window in a corner of the screen. What it does not do is listed on `FMediaKitEngine`: no adaptive bitrate (an HLS or DASH variant is picked at load time and offered as a video track), no media session or brightness, no DRM, and cues without their positioning. The native libraries are pulled per platform, so an Android build carries none of it.
 
 ## Android setup
 

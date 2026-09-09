@@ -146,10 +146,17 @@ class FDesktopLayerState extends State<FDesktopLayer> {
     } else if (key == LogicalKeyboardKey.keyM) {
       controller.toggleMute();
     } else if (key == LogicalKeyboardKey.keyF) {
-      _ui.toggleFullscreen();
+      // From the floating window, F means "give me the player back", not a fullscreen
+      // thumbnail.
+      value.isPipActive ? controller.exitPip() : _ui.toggleFullscreen();
     } else if (key == LogicalKeyboardKey.escape) {
-      if (!_ui.isFullscreen) return KeyEventResult.ignored;
-      _ui.toggleFullscreen();
+      if (value.isPipActive) {
+        controller.exitPip();
+      } else if (_ui.isFullscreen) {
+        _ui.toggleFullscreen();
+      } else {
+        return KeyEventResult.ignored;
+      }
     } else {
       return KeyEventResult.ignored;
     }
@@ -159,8 +166,8 @@ class FDesktopLayerState extends State<FDesktopLayer> {
   }
 }
 
-/// What a mouse does on the picture itself: click to pause, double-click for fullscreen, scroll
-/// for volume.
+/// What a mouse does on the picture itself: click to pause, double-click for fullscreen — or
+/// out of the floating Picture-in-Picture window, which is the same wish — scroll for volume.
 ///
 /// Inside the stack, above the touch gestures and below the chrome, so a click on a button is a
 /// button press and a click anywhere else is a pause. Opaque on purpose: the touch gesture layer
@@ -191,7 +198,9 @@ class FDesktopPointerLayer extends StatelessWidget {
         // With a double-click to watch for, a single click is only reported once the window for
         // a second one has closed — the same short pause before a pause that every desktop
         // player with the same two gestures has.
-        onDoubleTap: config.doubleClickTogglesFullscreen && !ui.isLocked ? ui.toggleFullscreen : null,
+        onDoubleTap: config.doubleClickTogglesFullscreen && !ui.isLocked
+            ? () => controller.value.isPipActive ? controller.exitPip() : ui.toggleFullscreen()
+            : null,
         child: const SizedBox.expand(),
       ),
     );

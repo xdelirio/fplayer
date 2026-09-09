@@ -156,6 +156,10 @@ class FMedia3Engine implements FPlaybackEngine {
   @override
   Future<void> exitPip() => _invoke('exitPip');
 
+  /// No-op: an Activity has no window mode to set; the route and the system bars are it.
+  @override
+  Future<void> setWindowFullscreen({required bool fullscreen}) async {}
+
   @override
   Future<void> setBrightness(double? brightness) =>
       _invoke('setBrightness', {'brightness': brightness});

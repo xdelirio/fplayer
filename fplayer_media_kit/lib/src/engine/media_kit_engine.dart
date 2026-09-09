@@ -1,9 +1,12 @@
 import 'dart:async';
-import 'dart:ui' show Size;
+import 'dart:io' show Platform;
+import 'dart:ui' show Rect, Size;
 
+import 'package:flutter/painting.dart' show Alignment;
 import 'package:fplayer/fplayer.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
+import 'package:window_manager/window_manager.dart' show windowManager;
 
 import 'media_kit_tracks.dart';
 import 'mpv_error.dart';
@@ -18,9 +21,16 @@ import 'mpv_error.dart';
 /// - **No adaptive bitrate.** mpv picks one HLS or DASH variant at load time and stays on it; the
 ///   variants are listed as video tracks the viewer can switch between by hand, and
 ///   `FTracks.isVideoAuto` is false.
-/// - **No Picture-in-Picture, no media session, no screen brightness.** Those are host-window
-///   and OS features the Android plugin reaches through the Activity. [enterPip] returns false,
-///   no PiP or session signal is ever emitted, and the brightness gesture goes inert.
+/// - **Picture-in-Picture is a floating window.** On a desktop there is no system PiP to hand
+///   the picture to, so [enterPip] shrinks the app's own window to a corner and keeps it above
+///   the others, and [exitPip] puts it back. The whole Flutter tree is in that small window,
+///   which is why `FPlayerView` shows nothing but the picture while PiP is active. Not on iOS,
+///   where this engine has no window to move; there `isPipSupported` stays false.
+/// - **Fullscreen is the window's.** [setWindowFullscreen] uses the platform's own mode — the
+///   green button on macOS, the borderless window on Windows and Linux.
+/// - **No media session, no screen brightness.** Those are OS features the Android plugin
+///   reaches through the Activity; no session signal is ever emitted, and the brightness
+///   gesture goes inert.
 /// - **No DRM.** libmpv has neither Widevine nor FairPlay, so protected content simply fails.
 /// - **Subtitles are text.** mpv hands over the text of the active cue and the package renders
 ///   it, in the same style as on Android. Positioned cues lose their placement, and bitmap
@@ -74,6 +84,14 @@ class FMediaKitEngine implements FPlaybackEngine {
 
   /// What mpv reports as selected, by property name: `vid`, `aid`, `sid`.
   final Map<String, String?> _selected = {'vid': null, 'aid': null, 'sid': null};
+
+  /// Where the window was before Picture-in-Picture shrank it, so leaving puts it back.
+  Rect? _windowBeforePip;
+
+  /// Whether this process owns a window that can be moved and made fullscreen.
+  ///
+  /// True on the three desktops. iOS plays through this engine too, and has neither.
+  static final bool _hasWindow = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
   mk.NativePlayer get _native => _player!.platform! as mk.NativePlayer;
 
@@ -148,6 +166,9 @@ class FMediaKitEngine implements FPlaybackEngine {
     for (final property in _selected.keys) {
       await _native.observeProperty(property, (value) async => _onSelectedChanged(property, value));
     }
+
+    // Binds the plugin to the main window; it refuses every other call until this has run.
+    if (_hasWindow) await windowManager.ensureInitialized();
   }
 
   @override
@@ -169,6 +190,9 @@ class FMediaKitEngine implements FPlaybackEngine {
     _stopTicker();
 
     _emit(const FEnginePlaybackStateChanged(FEnginePlaybackState.buffering));
+    // With every load rather than once at creation: the controller only listens once the engine
+    // exists, so anything said during [create] is said to nobody.
+    if (_hasWindow) _emit(FEnginePipChanged(isActive: _windowBeforePip != null, isSupported: true));
 
     await player.open(
       mk.Media(
@@ -309,12 +333,45 @@ class FMediaKitEngine implements FPlaybackEngine {
     ]);
   }
 
-  /// Always false: Picture-in-Picture is a host-window mode, and nothing here is wired to it.
+  /// Shrinks the window to a corner of the screen and keeps it above the others.
+  ///
+  /// The size follows the picture's shape, at a width that reads as a thumbnail rather than a
+  /// second player. Fullscreen is left first: a window cannot be both.
   @override
-  Future<bool> enterPip() async => false;
+  Future<bool> enterPip() async {
+    if (!_hasWindow || _windowBeforePip != null) return false;
+
+    await windowManager.setFullScreen(false);
+    _windowBeforePip = await windowManager.getBounds();
+
+    final aspect = _size.isEmpty ? 16 / 9 : _size.width * _pixelAspectRatio / _size.height;
+    const width = 400.0;
+    await windowManager.setAlwaysOnTop(true);
+    await windowManager.setSize(Size(width, width / aspect));
+    await windowManager.setAlignment(Alignment.bottomRight);
+
+    _emit(const FEnginePipChanged(isActive: true, isSupported: true));
+    return true;
+  }
 
   @override
-  Future<void> exitPip() async {}
+  Future<void> exitPip() async {
+    final bounds = _windowBeforePip;
+    if (bounds == null) return;
+    _windowBeforePip = null;
+
+    await windowManager.setAlwaysOnTop(false);
+    await windowManager.setBounds(bounds);
+    await windowManager.focus();
+
+    _emit(const FEnginePipChanged(isActive: false, isSupported: true));
+  }
+
+  @override
+  Future<void> setWindowFullscreen({required bool fullscreen}) async {
+    if (!_hasWindow) return;
+    await windowManager.setFullScreen(fullscreen);
+  }
 
   /// No-op: window brightness belongs to the host, and this engine has no channel to it.
   @override

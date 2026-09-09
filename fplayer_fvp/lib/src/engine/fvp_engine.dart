@@ -253,6 +253,10 @@ class FFvpEngine implements FPlaybackEngine {
   @override
   Future<void> exitPip() async {}
 
+  /// No-op: an Activity has no window mode to set.
+  @override
+  Future<void> setWindowFullscreen({required bool fullscreen}) async {}
+
   /// No-op: window brightness belongs to the Activity, and this engine has no channel to it.
   @override
   Future<void> setBrightness(double? brightness) async {}

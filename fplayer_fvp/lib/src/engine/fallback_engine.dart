@@ -204,6 +204,10 @@ class FFallbackEngine implements FPlaybackEngine {
   @override
   Future<void> exitPip() async => _active?.exitPip();
 
+  @override
+  Future<void> setWindowFullscreen({required bool fullscreen}) async =>
+      _active?.setWindowFullscreen(fullscreen: fullscreen);
+
   // Delegated rather than held here: brightness is the host window's, and only the engine that
   // owns a channel to the Activity can set it. After a fallback that is nobody, so the gesture
   // goes inert — one more thing libmdk gives up, listed on [FFvpEngine].

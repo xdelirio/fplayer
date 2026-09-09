@@ -505,6 +505,13 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     await _engine.exitPip();
   }
 
+  /// Puts the host window into fullscreen, or takes it out. Nothing on Android, where the
+  /// fullscreen route is the whole of it; on a desktop, what makes the window fill the screen.
+  Future<void> setWindowFullscreen({required bool fullscreen}) async {
+    if (!_isCreated) return;
+    await _engine.setWindowFullscreen(fullscreen: fullscreen);
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!_isCreated || _isDisposed) return;

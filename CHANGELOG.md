@@ -16,6 +16,14 @@
   that also drops the phone-only controls. The top bar and the secondary
   controls are shared with the touch chrome, as `FControlsTopBar` and
   `buildSecondaryControls`.
+- **Fullscreen and Picture-in-Picture on the desktops.** `FPlaybackEngine`
+  gained `setWindowFullscreen`, which the fullscreen route now calls on the
+  way in and out; the Android engine ignores it and the mpv engine hands it to
+  the window, so F fills the screen rather than the window. On the same
+  engine `enterPip` shrinks the app's window to a corner and keeps it above
+  the others, and `exitPip` puts it back — there is no system PiP to hand a
+  picture to on a desktop. Both through `window_manager`, in
+  `fplayer_media_kit` only.
 - **`fplayer_media_kit`.** A sibling package with a libmpv engine for iOS, macOS,
   Windows and Linux, behind the same `FPlaybackEngine` interface the Media3
   and libmdk engines implement. `createPlatformEngine()` hands a controller
