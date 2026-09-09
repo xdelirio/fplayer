@@ -498,7 +498,13 @@ class FMediaKitEngine implements FPlaybackEngine {
     _duration = duration > Duration.zero ? duration : null;
     _isLive = (_source?.isLive ?? false) || _duration == null;
     if (!_hasReportedInitialized) return;
-    _emit(FEngineDurationChanged(duration: _duration, isSeekable: !_isLive && _duration != null));
+    _emit(
+      FEngineDurationChanged(
+        duration: _duration,
+        isSeekable: !_isLive && _duration != null,
+        isLive: _isLive,
+      ),
+    );
   }
 
   void _onTracksChanged(mk.Tracks tracks) {

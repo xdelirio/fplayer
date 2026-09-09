@@ -84,10 +84,17 @@ final class FEngineVideoSizeChanged extends FEngineSignal {
 }
 
 final class FEngineDurationChanged extends FEngineSignal {
-  const FEngineDurationChanged({required this.duration, required this.isSeekable});
+  const FEngineDurationChanged({required this.duration, required this.isSeekable, this.isLive});
 
   final Duration? duration;
   final bool isSeekable;
+
+  /// Whether the media turned out to be live, when the engine learns that with the duration.
+  ///
+  /// Null leaves the controller's answer alone. Set by engines that only find out after
+  /// describing the media: mpv lists the tracks first and reports a duration once the demuxer
+  /// has one, so a stream initialised as live becomes on-demand a moment later.
+  final bool? isLive;
 }
 
 final class FEngineSpeedChanged extends FEngineSignal {

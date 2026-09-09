@@ -690,6 +690,7 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
             duration: signal.duration,
             clearDuration: signal.duration == null,
             isSeekable: signal.isSeekable,
+            isLive: signal.isLive,
           ),
         );
 
