@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Removed
+
+- **`fplayer_telemetry`.** The sibling package that queued `FPlayerObserver`
+  events on disk and posted them to a backend is gone: nothing consumes it
+  any more. The observer and `FPlaybackSessionTracker` stay in `fplayer`;
+  what to do with the metrics is the host app's business.
+
 ### Fixed
 
 - **Green and magenta banding over AV1 on Android TV.** The frames only ever

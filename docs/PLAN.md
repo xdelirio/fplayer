@@ -3,7 +3,7 @@
 > Status: roadmap complete. Every phase implemented and verified on device. Android-only.
 > Flutter 3.47 · Dart 3.13 · minSdk 24 (Flutter's current floor) · compileSdk 36 · Media3 1.11.0
 >
-> **Decisions made** — engine: native Media3 plugin · DRM: not required (hooks only, phase 11) · telemetry: sibling package `fplayer_telemetry`
+> **Decisions made** — engine: native Media3 plugin · DRM: not required (hooks only, phase 11) · telemetry: none — `fplayer` exposes `FPlayerObserver` and stops there
 
 ---
 
@@ -320,7 +320,7 @@ Every phase is deliverable, compiles, and leaves the `example/` app working.
 | ✅ **7** | PiP + MediaSession | PiP with auto-enter, in-window actions, MediaSession + notification, background audio, headset buttons | PiP works; controls on the lock screen |
 | ✅ **8** | Robustness | Error taxonomy, retry with backoff, load timeout, live-edge handling, bitrate caps / data-saver mode | Network drop → reconnects on its own; fatal error → overlay with retry |
 | ✅ **9** | Playlist and chapters | Queue, autoplay next, skip intro/outro markers, chapters on the bar, "next episode" card | A whole series plays back to back |
-| ✅ **10** | Analytics | `FPlayerObserver` fed by Media3's `AnalyticsListener` (startup, rebuffers, dropped frames, bytes, real bitrate), optional HTTP reporter in a separate package | Metrics match actual playback |
+| ✅ **10** | Analytics | `FPlayerObserver` fed by Media3's `AnalyticsListener` (startup, rebuffers, dropped frames, bytes, real bitrate), optional HTTP reporter in a separate package (since removed) | Metrics match actual playback |
 
 ---
 
@@ -332,7 +332,7 @@ Every phase is deliverable, compiles, and leaves the `example/` app working.
 |---|---|
 | Engine | Our own native plugin on Media3/ExoPlayer 1.11.0. `fvp` stays as an optional engine in phase 11 |
 | DRM | Not required. The `FDrmConfig` hooks stay in the API from phase 1, with no implementation |
-| Telemetry | Out of the core. `fplayer` exposes only the `FPlayerObserver` interface; the reporter with its persistent queue and HTTP client lives in `fplayer_telemetry` (sibling package) |
+| Telemetry | Out of the core. `fplayer` exposes only the `FPlayerObserver` interface; the `fplayer_telemetry` reporter that once shipped it to a backend has been removed |
 | Rendering | Start with `SurfaceProducer` (texture). Evaluate `PlatformView + SurfaceView` in phase 5 if a real TV drops frames at 4K |
 | Subtitles | Cues serialised to Dart and rendered in Flutter, preserving cue geometry |
 | Native package id | `dev.chikenare.fplayer` |

@@ -26,7 +26,7 @@ A Flutter video player built on **Media3/ExoPlayer**, meant to be shared across 
 - **Session analytics**: real watched time, startup, rebuffers, quality changes
 - Loose layers (`FVideoSurface`, `FSubtitleView`, `FProgressBar`) for building your own UI
 
-Outside the base package: the `fvp` engine for AV1 on older Android lives in `fplayer_fvp`, because it weighs 11.5 MB per ABI. Both siblings — `fplayer_fvp` and `fplayer_telemetry` — are consumed as path or git dependencies rather than from pub.dev. Offline downloads and Cast are not implemented.
+Outside the base package: the `fvp` engine for AV1 on older Android lives in `fplayer_fvp`, because it weighs 11.5 MB per ABI. It is consumed as a path or git dependency rather than from pub.dev. Offline downloads and Cast are not implemented.
 
 ## Requirements
 
@@ -368,8 +368,6 @@ tracker.dispose();
 
 It attaches from the outside — it listens to the controller, it doesn't modify it — and derives: real watched time (without pauses or stalls, adjusted for speed), time to first frame, the count and duration of rebuffers, quality changes, seeks, and bitrate and height averaged by time on screen.
 
-To ship that to a backend with a persistent queue and retries, use the sibling package `fplayer_telemetry`.
-
 > Bytes downloaded and dropped frames need a native bridge that does not exist yet; the fields are in the model but always read null.
 
 ### State
@@ -491,7 +489,6 @@ cd example && flutter run
 
 ```bash
 flutter test                           # the package
-cd fplayer_telemetry && flutter test   # the telemetry sibling
 cd fplayer_fvp && flutter test         # the libmdk engine sibling
 ```
 

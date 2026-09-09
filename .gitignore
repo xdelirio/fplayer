@@ -37,4 +37,3 @@ example/android/local.properties
 android/local.properties
 **/.flutter-plugins
 **/pubspec.lock
-!fplayer_telemetry/pubspec.lock
