@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../config/tv_config.dart';
+import '../../core/player_controller.dart';
 import '../controls/focus_highlight.dart';
 import '../player_scope.dart';
 
@@ -169,7 +170,8 @@ class FTvLayerState extends State<FTvLayer> {
 
     final key = event.logicalKey;
 
-    if (widget.config.handleMediaKeys && _handleMediaKey(key)) {
+    if (widget.config.handleMediaKeys && handleMediaKey(_ui.controller, key)) {
+      _ui.showControls();
       return KeyEventResult.handled;
     }
 
@@ -186,29 +188,6 @@ class FTvLayerState extends State<FTvLayer> {
     }
 
     return KeyEventResult.ignored;
-  }
-
-  bool _handleMediaKey(LogicalKeyboardKey key) {
-    final controller = _ui.controller;
-
-    if (key == LogicalKeyboardKey.mediaPlayPause) {
-      controller.togglePlayPause();
-    } else if (key == LogicalKeyboardKey.mediaPlay) {
-      controller.play();
-    } else if (key == LogicalKeyboardKey.mediaPause) {
-      controller.pause();
-    } else if (key == LogicalKeyboardKey.mediaStop) {
-      controller.pause();
-    } else if (key == LogicalKeyboardKey.mediaFastForward) {
-      controller.skipForward();
-    } else if (key == LogicalKeyboardKey.mediaRewind) {
-      controller.skipBackward();
-    } else {
-      return false;
-    }
-
-    _ui.showControls();
-    return true;
   }
 
   /// Moves the pending seek one step in [direction], accelerating over a run of presses.
@@ -323,4 +302,28 @@ class FTvScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(FTvScope oldWidget) => oldWidget.isActive != isActive;
+}
+
+/// Acts on a media key — play, pause, stop, fast-forward, rewind — and reports whether [key]
+/// was one.
+///
+/// Shared by the remote and the desktop layers: a keyboard with media keys and a remote send the
+/// same codes, and the answer to them is the same.
+bool handleMediaKey(FPlayerController controller, LogicalKeyboardKey key) {
+  if (key == LogicalKeyboardKey.mediaPlayPause) {
+    controller.togglePlayPause();
+  } else if (key == LogicalKeyboardKey.mediaPlay) {
+    controller.play();
+  } else if (key == LogicalKeyboardKey.mediaPause) {
+    controller.pause();
+  } else if (key == LogicalKeyboardKey.mediaStop) {
+    controller.pause();
+  } else if (key == LogicalKeyboardKey.mediaFastForward) {
+    controller.skipForward();
+  } else if (key == LogicalKeyboardKey.mediaRewind) {
+    controller.skipBackward();
+  } else {
+    return false;
+  }
+  return true;
 }

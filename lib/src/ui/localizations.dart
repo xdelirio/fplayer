@@ -20,6 +20,7 @@ class FPlayerLocalizations {
     this.seconds = 'seconds',
     this.mute = 'Mute',
     this.unmute = 'Unmute',
+    this.volume = 'Volume',
     this.settings = 'Settings',
     this.audio = 'Audio',
     this.subtitles = 'Subtitles',
@@ -70,6 +71,7 @@ class FPlayerLocalizations {
           seconds: 'segundos',
           mute: 'Silenciar',
           unmute: 'Activar sonido',
+          volume: 'Volumen',
           settings: 'Ajustes',
           audio: 'Audio',
           subtitles: 'Subtítulos',
@@ -119,6 +121,7 @@ class FPlayerLocalizations {
   final String seconds;
   final String mute;
   final String unmute;
+  final String volume;
   final String settings;
   final String audio;
   final String subtitles;
@@ -185,6 +188,7 @@ class FPlayerLocalizations {
     String? seconds,
     String? mute,
     String? unmute,
+    String? volume,
     String? settings,
     String? audio,
     String? subtitles,
@@ -232,6 +236,7 @@ class FPlayerLocalizations {
         seconds: seconds ?? this.seconds,
         mute: mute ?? this.mute,
         unmute: unmute ?? this.unmute,
+        volume: volume ?? this.volume,
         settings: settings ?? this.settings,
         audio: audio ?? this.audio,
         subtitles: subtitles ?? this.subtitles,

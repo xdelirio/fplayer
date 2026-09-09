@@ -21,6 +21,8 @@ import 'controls/player_button.dart';
 import 'controls/settings_panel.dart';
 import 'controls/skip_marker.dart';
 import 'controls/track_dialog.dart';
+import 'desktop/desktop_controls.dart';
+import 'desktop/desktop_layer.dart';
 import 'fullscreen.dart';
 import 'gestures/gesture_layer.dart';
 import 'localizations.dart';
@@ -521,7 +523,13 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
         child: FTvLayer(
           ui: this,
           config: widget.config.tv,
-          child: _buildStack(context),
+          child: _isDesktop
+              ? FDesktopLayer(
+                  ui: this,
+                  config: widget.config.desktop,
+                  child: _buildStack(context),
+                )
+              : _buildStack(context),
         ),
       ),
     );
@@ -569,6 +577,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
                   errorBuilder: (context, error, stack) => const SizedBox.shrink(),
                 ),
           FGestureLayer(ui: this),
+          if (_isDesktop) FDesktopPointerLayer(ui: this, config: widget.config.desktop),
           FSubtitleView(
             controller: widget.controller,
             style: widget.subtitleStyle ?? widget.controller.config.subtitleStyle,
@@ -594,16 +603,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
                     child: AnimatedOpacity(
                       opacity: _areControlsVisible ? 1 : 0,
                       duration: const Duration(milliseconds: 180),
-                      child: FControlsOverlay(
-                        ui: this,
-                        title: widget.title,
-                        subtitle: widget.subtitle,
-                        actions: widget.actions,
-                        previewBuilder: _previewBuilder,
-                        topBar: widget.topBarBuilder?.call(context, this),
-                        bottomBar: widget.bottomBarBuilder?.call(context, this),
-                        center: widget.centerBuilder?.call(context, this),
-                      ),
+                      child: _buildChrome(context),
                     ),
                   ),
                 ),
@@ -650,6 +650,41 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
         FPlayerPanel.speed => FSpeedSheet(ui: this),
         FPlayerPanel.settings => FSettingsPanel(ui: this),
       };
+
+  /// Whether the mouse-and-keyboard chrome is in force: `FDesktopControls` in place of
+  /// `FControlsOverlay`, and the pointer and key handling that goes with it.
+  bool get _isDesktop => isDesktopActive(widget.config.desktop);
+
+  /// The chrome for the input at hand. Both take the same bands from the same builders; only
+  /// what fills in when a builder is not given differs.
+  Widget _buildChrome(BuildContext context) {
+    final topBar = widget.topBarBuilder?.call(context, this);
+    final bottomBar = widget.bottomBarBuilder?.call(context, this);
+    final center = widget.centerBuilder?.call(context, this);
+
+    if (_isDesktop) {
+      return FDesktopControls(
+        ui: this,
+        title: widget.title,
+        subtitle: widget.subtitle,
+        actions: widget.actions,
+        previewBuilder: _previewBuilder,
+        topBar: topBar,
+        bottomBar: bottomBar,
+        center: center,
+      );
+    }
+    return FControlsOverlay(
+      ui: this,
+      title: widget.title,
+      subtitle: widget.subtitle,
+      actions: widget.actions,
+      previewBuilder: _previewBuilder,
+      topBar: topBar,
+      bottomBar: bottomBar,
+      center: center,
+    );
+  }
 
   /// Room the bottom band takes, so subtitles slide above it instead of hiding behind it.
   double get _bottomBarHeight {

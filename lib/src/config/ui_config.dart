@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../ui/localizations.dart';
 import '../ui/theme.dart';
 import '../ui/video_fit.dart';
+import 'desktop_config.dart';
 import 'tv_config.dart';
 
 /// Which touch gestures the player reacts to.
@@ -93,6 +94,7 @@ class FUiConfig {
     this.fit = FVideoFit.contain,
     this.gestures = const FGestureConfig(),
     this.tv = const FTvConfig(),
+    this.desktop = const FDesktopConfig(),
     this.theme = const FPlayerTheme(),
     this.localizations = const FPlayerLocalizations(),
   });
@@ -114,6 +116,27 @@ class FUiConfig {
           showFitButton: false,
           gestures: const FGestureConfig.none(),
           tv: const FTvConfig(mode: FTvMode.enabled),
+          theme: theme,
+        );
+
+  /// Preset for a mouse-and-keyboard build: the transport lives in the bottom bar, a click on the
+  /// picture pauses, the keys do what they do in every desktop player.
+  ///
+  /// The controls that only make sense on a phone — lock, Picture-in-Picture — are off, and so
+  /// is the back button: a desktop window has its own way out. Turn any of them back on with
+  /// `copyWith`.
+  const FUiConfig.desktop({FPlayerTheme theme = const FPlayerTheme()})
+      : this(
+          // A mouse is usually already over the player when it appears; show the chrome once and
+          // let the first idle stretch fade it.
+          showControlsOnStart: true,
+          showBackButton: false,
+          showLockButton: false,
+          showPipButton: false,
+          // Arrow keys seek and change the volume here. Left on auto, the first of them would
+          // switch the player to the remote layout instead.
+          tv: const FTvConfig(mode: FTvMode.disabled),
+          desktop: const FDesktopConfig(mode: FDesktopMode.enabled),
           theme: theme,
         );
 
@@ -146,6 +169,7 @@ class FUiConfig {
         fit = FVideoFit.contain,
         gestures = const FGestureConfig.none(),
         tv = const FTvConfig(mode: FTvMode.disabled),
+        desktop = const FDesktopConfig(mode: FDesktopMode.disabled),
         theme = const FPlayerTheme(),
         localizations = const FPlayerLocalizations();
 
@@ -229,6 +253,9 @@ class FUiConfig {
   /// Remote-control behaviour. Leave it on `auto` and a phone build costs nothing.
   final FTvConfig tv;
 
+  /// Mouse-and-keyboard behaviour. On `auto` it switches itself on for macOS, Windows and Linux.
+  final FDesktopConfig desktop;
+
   final FPlayerTheme theme;
   final FPlayerLocalizations localizations;
 
@@ -260,6 +287,7 @@ class FUiConfig {
     FVideoFit? fit,
     FGestureConfig? gestures,
     FTvConfig? tv,
+    FDesktopConfig? desktop,
     FPlayerTheme? theme,
     FPlayerLocalizations? localizations,
   }) =>
@@ -292,6 +320,7 @@ class FUiConfig {
         fit: fit ?? this.fit,
         gestures: gestures ?? this.gestures,
         tv: tv ?? this.tv,
+        desktop: desktop ?? this.desktop,
         theme: theme ?? this.theme,
         localizations: localizations ?? this.localizations,
       );

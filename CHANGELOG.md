@@ -4,6 +4,18 @@
 
 ### Added
 
+- **A desktop chrome.** `FDesktopControls`, a separate set of widgets used in
+  place of `FControlsOverlay` under a mouse and keyboard: transport in the
+  bottom bar beside a volume slider (`FVolumeSlider`) and a `1:23 / 12:14`
+  readout, pickers and fullscreen on the right, nothing in the middle of the
+  picture. `FDesktopLayer` handles the input — the mouse reveals and hides the
+  controls and vanishes when idle, click pauses, double-click goes fullscreen,
+  the wheel changes the volume, and Space, the arrows, M, F and Escape do what
+  they do in every desktop player. On by itself on macOS, Windows and Linux
+  through `FDesktopConfig(mode: auto)`; `FUiConfig.desktop()` is the preset
+  that also drops the phone-only controls. The top bar and the secondary
+  controls are shared with the touch chrome, as `FControlsTopBar` and
+  `buildSecondaryControls`.
 - **`fplayer_media_kit`.** A sibling package with a libmpv engine for iOS, macOS,
   Windows and Linux, behind the same `FPlaybackEngine` interface the Media3
   and libmdk engines implement. `createPlatformEngine()` hands a controller

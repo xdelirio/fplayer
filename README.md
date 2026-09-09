@@ -92,7 +92,7 @@ FPlayerView(
 
 Inside a builder, `FPlayerScope.of(context)` gives you the same view state the built-in controls use — visibility, lock, scrub, fit — so your bar can restart the auto-hide or begin a drag without rewiring anything.
 
-Presets: `FUiConfig.bare()` leaves only the video — no chrome and no gestures, for a player you drive entirely yourself — and `FUiConfig.tv()` assembles the leanback layout.
+Presets: `FUiConfig.bare()` leaves only the video — no chrome and no gestures, for a player you drive entirely yourself — `FUiConfig.tv()` assembles the leanback layout, and `FUiConfig.desktop()` the mouse-and-keyboard one.
 
 If you would rather build it from scratch, the layers are available on their own: `FVideoSurface`, `FSubtitleView`, `FProgressBar`, `FTrackDialog`, `FSettingsPanel`, `FErrorView`.
 
@@ -147,6 +147,19 @@ FUiConfig(tv: FTvConfig(mode: FTvMode.auto))   // the default
 - **OK** activates the focused control, or commits the seek in progress without waiting; the first press with the controls hidden only reveals them.
 - **Back** closes the settings panel, then the controls, and only then exits.
 - **Media keys** always act, without revealing anything first.
+
+### Desktop: mouse and keyboard
+
+```dart
+FUiConfig(desktop: FDesktopConfig(mode: FDesktopMode.auto))   // the default
+```
+
+On macOS, Windows and Linux the chrome is a different set of widgets, `FDesktopControls` in place of `FControlsOverlay`, laid out the way desktop players are: the transport moves out of the middle of the picture into the bottom bar, next to a volume slider and a `1:23 / 12:14` readout; the pickers, the app's `actions` and fullscreen sit on the right. The top row, the seek bar and every panel are the same widgets as on touch, and the same `*Builder` parameters replace any band. `FUiConfig.desktop()` is the preset that also drops the phone-only controls — back, lock, Picture-in-Picture — and switches the remote layout off so the arrow keys are free.
+
+- **Moving the mouse** reveals the controls; leaving the player hides them; an idle pointer over a playing picture disappears with them.
+- **Click** on the picture pauses, **double-click** goes fullscreen, the **wheel** changes the volume. Each is a flag on `FDesktopConfig`.
+- **Space** or **K** play and pause, **←/→** seek by `seekStep`, **↑/↓** change the volume by `volumeStep`, **M** mutes, **F** toggles fullscreen and **Escape** leaves it or closes a panel. `keyboardShortcuts: false` turns them off; the media keys work regardless.
+- The player takes keyboard focus when it appears, so the shortcuts work before the first click. `autofocus: false` for a player beside a text field.
 
 ### Gestures
 
