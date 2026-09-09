@@ -8,7 +8,8 @@ import 'package:flutter/widgets.dart';
 @immutable
 class FPlayerTheme {
   const FPlayerTheme({
-    this.accent = const Color(0xFFE50914),
+    this.accent = const Color(0xFFFFFFFF),
+    this.onAccent = const Color(0xFF111111),
     this.foreground = const Color(0xFFFFFFFF),
     this.mutedForeground = const Color(0xB3FFFFFF),
     this.disabledForeground = const Color(0x61FFFFFF),
@@ -35,9 +36,12 @@ class FPlayerTheme {
   });
 
   /// Larger touch targets and text, for a screen watched from across the room.
-  const FPlayerTheme.tv({Color accent = const Color(0xFFE50914)})
-      : this(
+  const FPlayerTheme.tv({
+    Color accent = const Color(0xFFFFFFFF),
+    Color onAccent = const Color(0xFF111111),
+  }) : this(
           accent: accent,
+          onAccent: onAccent,
           iconSize: 30,
           primaryIconSize: 56,
           trackHeight: 5,
@@ -57,6 +61,10 @@ class FPlayerTheme {
 
   /// Progress fill, active states, focus ring.
   final Color accent;
+
+  /// Text and icons drawn on a surface filled with [accent]: the primary button of a panel, the
+  /// selected speed pill. White on white is the reason this is a separate colour.
+  final Color onAccent;
 
   /// Icons and primary text.
   final Color foreground;
@@ -105,6 +113,7 @@ class FPlayerTheme {
 
   FPlayerTheme copyWith({
     Color? accent,
+    Color? onAccent,
     Color? foreground,
     Color? mutedForeground,
     Color? disabledForeground,
@@ -127,6 +136,7 @@ class FPlayerTheme {
   }) =>
       FPlayerTheme(
         accent: accent ?? this.accent,
+        onAccent: onAccent ?? this.onAccent,
         foreground: foreground ?? this.foreground,
         mutedForeground: mutedForeground ?? this.mutedForeground,
         disabledForeground: disabledForeground ?? this.disabledForeground,

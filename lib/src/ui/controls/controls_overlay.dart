@@ -375,6 +375,7 @@ List<Widget> buildSecondaryControls(
   final controller = ui.controller;
   final value = controller.value;
   final isTv = FTvScope.maybeOf(context)?.isActive ?? false;
+  final isDesktop = FDesktopScope.maybeOf(context)?.isActive ?? false;
 
   return [
     if (config.showAudioSubtitlesButton && hasTracksToPick(ui))
@@ -416,7 +417,10 @@ List<Widget> buildSecondaryControls(
         semanticLabel: value.isMuted ? l10n.unmute : l10n.mute,
         onPressed: controller.toggleMute,
       ),
-    if (config.showFitButton)
+    // Cropping the picture to the frame is for a screen that cannot change shape. A desktop
+    // window is resized to the picture instead, and the control's glyph beside fullscreen read
+    // as a second window mode rather than a fit.
+    if (config.showFitButton && !isDesktop)
       FPlayerButton(
         icon: ui.fit == FVideoFit.cover ? Icons.fullscreen_exit : Icons.aspect_ratio,
         theme: theme,

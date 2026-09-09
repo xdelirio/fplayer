@@ -24,6 +24,17 @@
   the others, and `exitPip` puts it back — there is no system PiP to hand a
   picture to on a desktop. Both through `window_manager`, in
   `fplayer_media_kit` only.
+
+### Changed
+
+- **The accent is white.** `FPlayerTheme.accent` — the progress fill, the
+  selected row, the focus ring — defaults to white instead of red, on touch
+  and on TV. Text drawn on an accent fill, the panel's primary button and the
+  selected speed pill, takes the new `onAccent` colour, near-black by
+  default; white on white was unreadable.
+- **No fit control under the desktop layout.** `showFitButton` is ignored
+  there, as `showLockButton` is: a desktop window is resized to the picture,
+  and the control's glyph beside fullscreen read as a second window mode.
 - **`fplayer_media_kit`.** A sibling package with a libmpv engine for iOS, macOS,
   Windows and Linux, behind the same `FPlaybackEngine` interface the Media3
   and libmdk engines implement. `createPlatformEngine()` hands a controller

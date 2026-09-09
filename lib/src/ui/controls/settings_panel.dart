@@ -417,7 +417,7 @@ class _FSpeedChipState extends State<FSpeedChip> with FFocusHighlight {
           child: Text(
             widget.label,
             style: theme.labelStyle.copyWith(
-              color: theme.foreground,
+              color: widget.isSelected ? theme.onAccent : theme.foreground,
               fontWeight: widget.isSelected ? FontWeight.w700 : FontWeight.w500,
             ),
           ),

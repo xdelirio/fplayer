@@ -227,7 +227,7 @@ class _FPanelFooterButtonState extends State<FPanelFooterButton> with FFocusHigh
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.labelStyle.copyWith(
-                color: theme.foreground,
+                color: widget.isPrimary ? theme.onAccent : theme.foreground,
                 fontWeight: widget.isPrimary ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
