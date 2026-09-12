@@ -27,6 +27,13 @@
 
 ### Fixed
 
+- **A failed video was a dead end.** `FErrorView` is opaque and sits over the
+  chrome, so the back button in the top bar went with it: a video that will
+  never play — a 404, an expired link — left nothing to press, and the viewer
+  had to kill the app. The view now carries the way out itself: the arrow in
+  the corner where the chrome keeps it, and a labelled `Back` button beside
+  `Retry` that a D-pad can reach. Shown when `FUiConfig.showBackButton` is on,
+  and in fullscreen regardless, where back leaves fullscreen.
 - **F closed a host's own full-window player on a desktop.** `FPlayerView`
   with `isFullscreen: true` on a route the host built popped that route on
   every fullscreen toggle — the button, F, a double-click — which on a desktop
