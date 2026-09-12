@@ -358,7 +358,9 @@ void main() {
   });
 
   group('a host-owned full-window player', () {
-    testWidgets('F fills the window instead of closing the player', (tester) async {
+    /// A page the host built for itself: `isFullscreen: true` on a route the player never
+    /// pushed. Nothing here is the player's to pop.
+    Future<void> hostPage(WidgetTester tester, {VoidCallback? onBack}) async {
       tester.view.physicalSize = const Size(800, 450);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -373,6 +375,7 @@ void main() {
                   controller: controller,
                   config: const FUiConfig.desktop(),
                   isFullscreen: true,
+                  onBack: onBack,
                 ),
               ),
             ),
@@ -382,6 +385,10 @@ void main() {
       await controller.open(const FPlayerSource.network('https://example.com/a.mp4'));
       engine.becomeReady(duration: const Duration(minutes: 10));
       await tester.pump();
+    }
+
+    testWidgets('F fills the window instead of closing the player', (tester) async {
+      await hostPage(tester);
       expect(uiOf(tester).isFullscreen, isFalse, reason: 'the window is not fullscreen yet');
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
@@ -395,6 +402,56 @@ void main() {
       expect(find.byType(FPlayerView), findsOneWidget);
       expect(engine.calls, contains('setWindowFullscreen:false'));
       expect(uiOf(tester).isFullscreen, isFalse);
+      await settlePlayer(tester);
+    });
+
+    testWidgets('a video reaching its end gives the window back, not the page', (tester) async {
+      await hostPage(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.pump();
+      expect(uiOf(tester).isFullscreen, isTrue);
+      engine.calls.clear();
+
+      // `exitOnComplete` is on by default, and it used to pop — which on a page the host built
+      // closed the player, and the screen around it, when the video simply ended.
+      engine.emit(const FEnginePlaybackStateChanged(FEnginePlaybackState.ended));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(FPlayerView), findsOneWidget, reason: 'the page stays');
+      expect(engine.calls, contains('setWindowFullscreen:false'));
+      expect(uiOf(tester).isFullscreen, isFalse);
+      await settlePlayer(tester);
+    });
+
+    testWidgets('back runs the host callback instead of popping their page', (tester) async {
+      var backs = 0;
+      await hostPage(tester, onBack: () => backs++);
+
+      uiOf(tester).back();
+      await tester.pump();
+
+      expect(backs, 1);
+      expect(find.byType(FPlayerView), findsOneWidget, reason: 'the page stays');
+      await settlePlayer(tester);
+    });
+
+    testWidgets('back gives a fullscreen window back before it leaves', (tester) async {
+      var backs = 0;
+      await hostPage(tester, onBack: () => backs++);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.pump();
+      engine.calls.clear();
+
+      uiOf(tester).back();
+      await tester.pump();
+
+      expect(engine.calls, contains('setWindowFullscreen:false'));
+      expect(backs, 0, reason: 'the first back is the window');
+
+      uiOf(tester).back();
+      await tester.pump();
+      expect(backs, 1);
       await settlePlayer(tester);
     });
   });

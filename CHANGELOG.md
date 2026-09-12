@@ -25,8 +25,28 @@
   picture to on a desktop. Both through `window_manager`, in
   `fplayer_media_kit` only.
 
+### Changed
+
+- **The chrome is no longer rebuilt while it is off screen.** Playback notifies
+  several times a second, and every one of those rebuilt the whole chrome — the
+  seek bar, the volume slider, a dozen buttons, the scrolling row of pickers —
+  behind an opacity of zero. It is now rebuilt only while it is on screen, and
+  freshly the moment it comes back. On a desktop, the mouse gets the same
+  treatment from the other side: a hover used to cancel and re-arm the
+  auto-hide countdown on every one of the hundred events a second a trackpad
+  reports, and now does so at most ten times a second. Hidden chrome still
+  comes back on the first move, with no wait.
+
 ### Fixed
 
+- **A finished video closed a host's own full-window player on a desktop.**
+  `exitOnComplete` is on by default and popped the route, which on a page the
+  host built with `isFullscreen: true` is their page, not ours: the video
+  ended and the player — and the screen around it — went with it. On a desktop
+  the end of a video now gives the *window* back and leaves the page standing,
+  the same rule the F key already follows. `back` follows it too: on such a
+  page it gives a fullscreen window back first, then runs the host's `onBack`
+  rather than popping a route the player never pushed.
 - **A failed video was a dead end.** `FErrorView` is opaque and sits over the
   chrome, so the back button in the top bar went with it: a video that will
   never play — a 404, an expired link — left nothing to press, and the viewer

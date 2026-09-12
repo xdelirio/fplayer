@@ -186,6 +186,9 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
       widget.controller.addListener(_onPlaybackChanged);
     }
     if (oldWidget.config.fit != widget.config.fit) _fit = widget.config.fit;
+    // A config or a builder swapped while the chrome was away would otherwise keep showing the
+    // old one until the next time it is asked for.
+    _chromeWhileHidden = null;
   }
 
   @override
@@ -408,8 +411,15 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
 
   @override
   void back() {
-    if (widget.isFullscreen) {
+    // Only the copy this view pushed is a route back may close. A page the host built with
+    // `isFullscreen: true` is theirs: there, back means whatever they said it means, and a
+    // window we put into fullscreen is given back first — the same order Escape follows.
+    if (widget.isFullscreen && (_isOwnFullscreenRoute || !_isDesktop)) {
       _leaveFullscreen();
+      return;
+    }
+    if (widget.isFullscreen && _isWindowFullscreen) {
+      unawaited(toggleFullscreen());
       return;
     }
     if (widget.onBack != null) {
@@ -476,7 +486,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
     }
 
     if (widget.fullscreen.exitOnComplete && widget.isFullscreen && value.isCompleted) {
-      _leaveFullscreen();
+      _exitFullscreenOnComplete();
     } else if (widget.fullscreen.autoOnPlay &&
         !widget.isFullscreen &&
         !_hasAutoEnteredFullscreen &&
@@ -488,6 +498,20 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
     }
 
     setState(() {});
+  }
+
+  /// What "leave fullscreen when the media ends" means for this view.
+  ///
+  /// The copy this view pushed is popped, as before. A page the host built with
+  /// `isFullscreen: true` is not ours to close: on a desktop, fullscreen there is the window, so
+  /// the end of a video gives the window back and leaves the page standing. Popping it is how a
+  /// video reaching its end closed the player and took the screen around it along.
+  void _exitFullscreenOnComplete() {
+    if (_isDesktop && !_isOwnFullscreenRoute) {
+      if (_isWindowFullscreen) unawaited(toggleFullscreen());
+      return;
+    }
+    _leaveFullscreen();
   }
 
   void _restartHideTimer() {
@@ -647,7 +671,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
                     child: AnimatedOpacity(
                       opacity: _areControlsVisible ? 1 : 0,
                       duration: const Duration(milliseconds: 180),
-                      child: _buildChrome(context),
+                      child: _chrome(context),
                     ),
                   ),
                 ),
@@ -716,6 +740,24 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   FTvConfig get _tvConfig => _isDesktop && widget.config.tv.mode == FTvMode.auto
       ? widget.config.tv.copyWith(mode: FTvMode.disabled)
       : widget.config.tv;
+
+  /// The last chrome built while it was on screen.
+  ///
+  /// Playback notifies several times a second, and every one of those rebuilt the whole chrome —
+  /// the seek bar, the volume slider, a dozen buttons, the scrolling row of pickers — while it
+  /// sat faded out over a film nobody was reaching for. Handing the element the *same widget
+  /// instance* is how Flutter is told a subtree has not changed: it stops at the identity check
+  /// instead of descending into it.
+  Widget? _chromeWhileHidden;
+
+  /// The chrome, rebuilt only while it is on screen.
+  ///
+  /// What it shows is frozen as it fades out, which is what the viewer sees anyway; the first
+  /// build after it comes back is a fresh one.
+  Widget _chrome(BuildContext context) {
+    if (!_areControlsVisible && _chromeWhileHidden != null) return _chromeWhileHidden!;
+    return _chromeWhileHidden = _buildChrome(context);
+  }
 
   /// The chrome for the input at hand. Both take the same bands from the same builders; only
   /// what fills in when a builder is not given differs.

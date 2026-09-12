@@ -83,6 +83,47 @@ void main() {
     expect(uiOf(tester).areControlsVisible, isFalse);
   });
 
+  testWidgets('the chrome is not rebuilt while it is off screen', (tester) async {
+    var builds = 0;
+    await pumpPlayer(
+      tester,
+      controller: controller,
+      config: const FUiConfig(
+        showControlsOnStart: true,
+        controlsTimeout: Duration(seconds: 2),
+      ),
+      bottomBarBuilder: (context, ui) {
+        builds++;
+        return const SizedBox(height: 40);
+      },
+    );
+    await controller.open(source);
+    engine.becomeReady();
+    await tester.pump();
+    expect(builds, greaterThan(0));
+
+    // Let it fade out, then play on. Every tick used to rebuild the whole chrome — seek bar,
+    // volume slider, a dozen buttons — behind an opacity of zero.
+    for (var i = 1; i <= 12; i++) {
+      tick(Duration(milliseconds: 250 * i));
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(uiOf(tester).areControlsVisible, isFalse);
+
+    final whileHidden = builds;
+    for (var i = 13; i <= 24; i++) {
+      tick(Duration(milliseconds: 250 * i));
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(builds, whileHidden, reason: 'nothing rebuilds a chrome nobody can see');
+
+    // And it is up to date again the moment it is asked for.
+    uiOf(tester).showControls();
+    await tester.pump();
+    expect(builds, greaterThan(whileHidden));
+    await settlePlayer(tester);
+  });
+
   testWidgets('the exit-fullscreen control leaves fullscreen', (tester) async {
     await pumpPlayer(
       tester,
