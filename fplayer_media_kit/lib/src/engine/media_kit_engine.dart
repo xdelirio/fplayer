@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' show Rect, Size;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/painting.dart' show Alignment;
 import 'package:fplayer/fplayer.dart';
 import 'package:media_kit/media_kit.dart' as mk;
@@ -597,7 +598,9 @@ class FMediaKitEngine implements FPlaybackEngine {
     if (video == null || _isDisposed) return;
     final id = video.id.value;
     final rect = video.rect.value;
-    final isReal = id != null && rect != null && rect.width > 1 && rect.height > 1;
+    final isReal = id != null &&
+        rect != null &&
+        (_reportsSizeOnlyOnceDrawn || (rect.width > 1 && rect.height > 1));
     final next = isReal && _hasTextureCaughtUp(rect) ? id : null;
     if (next == _textureId) return;
     final wasShown = _textureId != null;
@@ -618,6 +621,15 @@ class FMediaKitEngine implements FPlaybackEngine {
     }
     _emitVideoSize();
   }
+
+  /// Whether the renderer learns the picture's size only by being drawn, on Linux.
+  ///
+  /// media_kit_video's Linux texture reports one pixel square until Flutter asks it for a frame,
+  /// and it builds the real one — and reports its size — from inside that request. Flutter only
+  /// asks a texture that is on screen. Waiting for a real size before showing it, as the other
+  /// platforms can, meant it was never shown, never asked, and never sized: sound and a black
+  /// picture, for good. There the texture goes up as soon as the picture is described.
+  static final bool _reportsSizeOnlyOnceDrawn = Platform.isLinux;
 
   /// The texture size the picture being decoded needs — mpv's display size, turned upright — or
   /// null while no picture has been described since the last load.
@@ -774,6 +786,11 @@ class FMediaKitEngine implements FPlaybackEngine {
   /// that met the trouble says why and the player then says it gave up. The why comes first,
   /// so it is kept until the giving up arrives and reported with it.
   void _onLog(mk.PlayerLog log) {
+    // Written out, because otherwise nothing is: on a machine where playback runs but shows and
+    // plays nothing — a system libmpv whose FFmpeg lacks a demuxer or a decoder, an audio output
+    // that would not open — mpv says exactly which, and it was said to no one. Warnings and
+    // above only, which during healthy playback is next to silent.
+    debugPrint('fplayer: mpv [${log.level}] ${log.prefix}: ${log.text.trimRight()}');
     if (!_isOpening) return;
     final reason = classifyMpvLog(log);
     if (isMpvLoadFailure(log)) {

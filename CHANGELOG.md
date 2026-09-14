@@ -39,6 +39,12 @@
 
 ### Fixed
 
+- **mpv engine on Linux: a black picture.** media_kit_video's Linux texture
+  reports its real size only from inside Flutter's request for a frame, and
+  Flutter only asks a texture that is on screen. The engine kept the texture
+  hidden until that size arrived, so it never did. On Linux the texture now
+  goes up as soon as the picture is described. mpv's warnings and errors are
+  also printed, as `fplayer: mpv [level] prefix: text`.
 - **mpv engine on Windows: the app closed when a picture changed size.**
   media_kit_video's Windows renderer rebuilds its D3D textures on every resize
   without the lock Flutter's raster thread reads them under, and publishes the
