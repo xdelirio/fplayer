@@ -12,6 +12,7 @@ import 'package:flutter/widgets.dart';
 
 import '../player_scope.dart';
 import '../theme.dart';
+import '../tv/tv_layer.dart';
 import 'focus_highlight.dart';
 
 /// The frosted plate a panel sits on, sized to what the space allows.
@@ -36,32 +37,45 @@ class FPanelSheet extends StatelessWidget {
       Radius.circular(theme.borderRadius.topLeft.x + theme.spacing),
     );
 
+    // A remote means a television, and a television means the picture is a SurfaceView under
+    // hybrid composition. A blur there has nothing to sample — the video is not in Flutter's
+    // layers — and every frame of it is rasterised on the platform thread the decoder's
+    // callbacks share, by a GPU chosen for decoding rather than for filters: the panel stuttered
+    // open and the film stuttered behind it. A plate nearly opaque reads the same from a sofa.
+    final isRemote = FTvScope.maybeOf(context)?.isActive ?? false;
+
     return LayoutBuilder(
       builder: (context, constraints) {
+        final plate = DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.surface.withValues(alpha: theme.surface.a * (isRemote ? 0.96 : 0.82)),
+            borderRadius: radius,
+            border: Border.all(color: theme.foreground.withValues(alpha: 0.10)),
+          ),
+          child: child,
+        );
+
         return Container(
           width: math.min(width ?? theme.menuWidth, constraints.maxWidth),
           constraints: BoxConstraints(maxHeight: constraints.maxHeight),
           decoration: BoxDecoration(
             borderRadius: radius,
-            boxShadow: const [
-              BoxShadow(color: Color(0x73000000), blurRadius: 40, offset: Offset(0, 16)),
-            ],
+            boxShadow: isRemote
+                ? null
+                : const [
+                    BoxShadow(color: Color(0x73000000), blurRadius: 40, offset: Offset(0, 16)),
+                  ],
           ),
           child: ClipRRect(
             borderRadius: radius,
-            child: BackdropFilter(
-              // The picture behind stays visible but unreadable, which is what tells the eye the
-              // panel is over the video rather than replacing it.
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: theme.surface.withValues(alpha: theme.surface.a * 0.82),
-                  borderRadius: radius,
-                  border: Border.all(color: theme.foreground.withValues(alpha: 0.10)),
-                ),
-                child: child,
-              ),
-            ),
+            child: isRemote
+                ? plate
+                : BackdropFilter(
+                    // The picture behind stays visible but unreadable, which is what tells the
+                    // eye the panel is over the video rather than replacing it.
+                    filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                    child: plate,
+                  ),
           ),
         );
       },

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.util.Rational
 import android.view.Surface
 import androidx.annotation.OptIn
@@ -36,6 +37,12 @@ import io.flutter.view.TextureRegistry
  * device's current mode, while `FEATURE_LEANBACK` is what the TV Play Store filters on. Devices
  * exist that report only one of them.
  */
+private const val LOG_TAG = "fplayer"
+
+/** Whether [name] is one of the platform's software codecs rather than the SoC's own. */
+private fun isSoftwareDecoder(name: String): Boolean =
+    name.startsWith("c2.android.") || name.startsWith("OMX.google.") || name.startsWith("c2.ffmpeg.")
+
 private fun isTelevision(context: Context): Boolean {
     val uiMode = context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
     if (uiMode?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION) return true
@@ -233,6 +240,32 @@ internal class PlayerHost(
                     mediaLoadData: MediaLoadData,
                 ) {
                     emitTracksIfActiveChanged()
+                }
+
+                // What a stutter on a television is, told apart in logcat. A box has one or two
+                // hardware decoder instances; when another player still holds them, decoder
+                // fallback quietly hands this one a software decoder, and a 4K or AV1 stream
+                // plays at a few frames a second — sometimes, depending on who got there first.
+                override fun onVideoDecoderInitialized(
+                    eventTime: AnalyticsListener.EventTime,
+                    decoderName: String,
+                    initializedTimestampMs: Long,
+                    initializationDurationMs: Long,
+                ) {
+                    if (isSoftwareDecoder(decoderName)) {
+                        Log.w(LOG_TAG, "player $playerId: software video decoder $decoderName")
+                    } else {
+                        Log.i(LOG_TAG, "player $playerId: video decoder $decoderName")
+                    }
+                }
+
+                // Reported in batches by Media3, at most once per fifty frames: cheap to log.
+                override fun onDroppedVideoFrames(
+                    eventTime: AnalyticsListener.EventTime,
+                    droppedFrames: Int,
+                    elapsedMs: Long,
+                ) {
+                    Log.w(LOG_TAG, "player $playerId: dropped $droppedFrames frames in ${elapsedMs}ms")
                 }
             },
         )

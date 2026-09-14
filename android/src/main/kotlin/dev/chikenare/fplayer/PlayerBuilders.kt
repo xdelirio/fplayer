@@ -2,13 +2,19 @@ package dev.chikenare.fplayer
 
 import android.content.Context
 import androidx.annotation.OptIn
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.RenderersFactory
+import androidx.media3.exoplayer.analytics.PlayerId
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.TrackGroupArray
+import androidx.media3.exoplayer.trackselection.ExoTrackSelection
+import androidx.media3.exoplayer.upstream.Allocator
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 
 /** Builds the ExoPlayer collaborators that are configured once, at player creation. */
@@ -45,8 +51,25 @@ internal object PlayerBuilders {
 
         buffering.bool("prioritizeTimeOverSizeThresholds")?.let(builder::setPrioritizeTimeOverSizeThresholds)
 
-        return builder.build()
+        return HeapBoundLoadControl(builder.build(), heapBufferCeilingBytes())
     }
+
+    /**
+     * The most media the buffer may hold, from what this process's Java heap can spare.
+     *
+     * Media3 keeps every buffered byte in 64 KB arrays on the Java heap. Its own byte target
+     * assumes a phone's heap, and `prioritizeTimeOverSizeThresholds` — on in both the fast-start
+     * and the resilient presets — sets that target aside until the time goal is met: a minute of
+     * a 4K stream is a couple of hundred megabytes, and a television box with a 256 MB heap
+     * answered with an OutOfMemoryError that closed the app mid-film.
+     */
+    private fun heapBufferCeilingBytes(): Long {
+        val heap = Runtime.getRuntime().maxMemory()
+        if (heap <= 0 || heap == Long.MAX_VALUE) return Long.MAX_VALUE
+        return (heap * 2 / 5).coerceAtLeast(MIN_BUFFER_CEILING_BYTES)
+    }
+
+    private const val MIN_BUFFER_CEILING_BYTES = 32L * 1024 * 1024
 
     fun renderersFactory(
         context: Context,
@@ -122,4 +145,54 @@ internal object PlayerBuilders {
                     }
                 }
         }
+}
+
+/**
+ * A [LoadControl] that stops loading once the buffer reaches [ceilingBytes], whatever the load
+ * control underneath would have done.
+ *
+ * Every other decision is the underlying one's. Each member is forwarded by hand rather than
+ * through interface delegation: most of [LoadControl] is Java default methods, and a default
+ * that is not forwarded would quietly run the interface's no-op instead of the real control's.
+ */
+@OptIn(UnstableApi::class)
+private class HeapBoundLoadControl(
+    private val delegate: LoadControl,
+    private val ceilingBytes: Long,
+) : LoadControl {
+    override fun onPrepared(playerId: PlayerId) = delegate.onPrepared(playerId)
+
+    override fun onTracksSelected(
+        parameters: LoadControl.Parameters,
+        trackGroups: TrackGroupArray,
+        trackSelections: Array<out ExoTrackSelection?>,
+    ) = delegate.onTracksSelected(parameters, trackGroups, trackSelections)
+
+    override fun onStopped(playerId: PlayerId) = delegate.onStopped(playerId)
+
+    override fun onReleased(playerId: PlayerId) = delegate.onReleased(playerId)
+
+    override fun getAllocator(playerId: PlayerId): Allocator = delegate.getAllocator(playerId)
+
+    override fun getBackBufferDurationUs(playerId: PlayerId): Long =
+        delegate.getBackBufferDurationUs(playerId)
+
+    override fun retainBackBufferFromKeyframe(playerId: PlayerId): Boolean =
+        delegate.retainBackBufferFromKeyframe(playerId)
+
+    override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
+        // Asked first either way, so the control underneath keeps its own loading state current.
+        val wanted = delegate.shouldContinueLoading(parameters)
+        return wanted && delegate.getAllocator(parameters.playerId).totalBytesAllocated < ceilingBytes
+    }
+
+    override fun shouldContinuePreloading(
+        playerId: PlayerId,
+        timeline: Timeline,
+        mediaPeriodId: MediaSource.MediaPeriodId,
+        bufferedDurationUs: Long,
+    ): Boolean = delegate.shouldContinuePreloading(playerId, timeline, mediaPeriodId, bufferedDurationUs)
+
+    override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean =
+        delegate.shouldStartPlayback(parameters)
 }

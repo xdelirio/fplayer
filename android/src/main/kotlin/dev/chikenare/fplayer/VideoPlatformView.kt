@@ -23,18 +23,29 @@ internal class VideoPlatformViewFactory(
         viewId: Int,
         args: Any?,
     ): PlatformView {
-        val playerId =
-            ((args as? Map<*, *>)?.get("playerId") as? Number)?.toLong()
-                ?: throw IllegalArgumentException("A video platform view needs a playerId")
-        val host =
-            hostFor(playerId)
-                ?: throw IllegalStateException("No player $playerId to render into")
+        val playerId = ((args as? Map<*, *>)?.get("playerId") as? Number)?.toLong()
+        // A view Flutter asks for after its player went away — a page popped while the surface
+        // was being rebuilt, a controller disposed in the same frame — gets a blank one. Thrown,
+        // the refusal came back to Dart as an error nothing awaits, which a crash reporter set to
+        // treat uncaught errors as fatal turns into the app closing.
+        val host = playerId?.let(hostFor) ?: return BlankPlatformView(context)
         return VideoPlatformView(context, host)
     }
 
     companion object {
         const val VIEW_TYPE = "${Channels.MAIN}/video"
     }
+}
+
+/** An empty view, for a platform view whose player no longer exists. */
+private class BlankPlatformView(
+    context: Context,
+) : PlatformView {
+    private val view = View(context).apply { isFocusable = false }
+
+    override fun getView(): View = view
+
+    override fun dispose() {}
 }
 
 /**

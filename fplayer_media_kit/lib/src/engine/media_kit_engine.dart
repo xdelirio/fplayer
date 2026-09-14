@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:math' as math;
 import 'dart:ui' show Rect, Size;
 
 import 'package:flutter/painting.dart' show Alignment;
@@ -150,8 +151,20 @@ class FMediaKitEngine implements FPlaybackEngine {
     final decoding = config.decoding;
     _video = mkv.VideoController(
       player,
+      // The decoder mode chooses the *decoder*. Rendering stays on the GPU either way: turning
+      // `enableHardwareAcceleration` off does not make mpv decode in software, it makes
+      // media_kit draw every frame on the CPU and copy it into a pixel buffer — a stutter at
+      // 1080p and a slideshow above it — while mpv went on decoding in hardware regardless.
       configuration: mkv.VideoControllerConfiguration(
-        enableHardwareAcceleration: decoding.mode != FDecoderMode.softwareOnly,
+        hwdec: switch (decoding.mode) {
+          FDecoderMode.softwareOnly || FDecoderMode.softwareFirst => 'no',
+          // Decoded on the GPU and copied back, on Windows. The zero-copy path hands D3D11
+          // frames straight to ANGLE, and on a share of Intel and AMD drivers that interop
+          // crashes the process inside the driver. The copy costs some CPU at 4K; a crash costs
+          // the app.
+          FDecoderMode.hardwareFirst || FDecoderMode.hardwareOnly =>
+            Platform.isWindows ? 'auto-copy' : null,
+        },
       ),
     );
     _video!.id.addListener(_onTextureChanged);
@@ -164,13 +177,23 @@ class FMediaKitEngine implements FPlaybackEngine {
       stream.completed.listen(_onCompletedChanged),
       stream.duration.listen(_onDurationChanged),
       stream.tracks.listen(_onTracksChanged),
-      stream.videoParams.listen((_) => _emitVideoSize()),
+      stream.videoParams.listen(_onVideoParams),
       stream.subtitle.listen(_onSubtitleText),
       stream.log.listen(_onLog),
     ]);
 
     await player.setVolume(config.playback.volume * 100);
     await player.setRate(config.playback.speed);
+
+    // How long mpv waits on a silent connection before it gives up on the read — and a read it
+    // gives up on is, to mpv, the end of the file. media_kit's five seconds turned every longer
+    // stall into a video that had "finished" halfway through; the network config's timeouts are
+    // what the Android engine waits, and what this one waits too.
+    final network = config.network;
+    final timeout = network.readTimeout > network.connectTimeout
+        ? network.readTimeout
+        : network.connectTimeout;
+    await _native.setProperty('network-timeout', '${math.max(5, timeout.inSeconds)}');
     await setLooping(looping: config.playback.loop);
     await setPreferredLanguages(
       audio: config.playback.preferredAudioLanguages,
@@ -212,10 +235,19 @@ class FMediaKitEngine implements FPlaybackEngine {
     // mpv options outlive the file they were set for. A track pinned by hand on the last source
     // would open this one pinned to the same id instead of by language, and a `start` from a
     // retry would open the next item forty minutes in.
-    await _native.setProperty('aid', 'auto');
-    await _native.setProperty('vid', 'auto');
-    await _native.setProperty('sid', _isTextDisabled ? 'no' : 'auto');
-    if (source.startAt == null) await _native.setProperty('start', 'none');
+    final options = {
+      'aid': 'auto',
+      'vid': 'auto',
+      'sid': _isTextDisabled ? 'no' : 'auto',
+      if (source.startAt == null) 'start': 'none',
+    };
+    for (final MapEntry(:key, :value) in options.entries) {
+      // Checked before every call rather than once: leaving the page disposes the player while
+      // this is still working through its awaits, and `_native` is gone with it.
+      if (_isDisposed || generation != _sourceGeneration) return;
+      await _native.setProperty(key, value);
+    }
+    if (_isDisposed || generation != _sourceGeneration) return;
 
     await player.open(
       mk.Media(
@@ -237,6 +269,7 @@ class FMediaKitEngine implements FPlaybackEngine {
     _loadReason = null;
 
     for (final subtitle in source.subtitles) {
+      if (_isDisposed || generation != _sourceGeneration) return;
       await addSubtitle(subtitle);
     }
   }
@@ -272,6 +305,7 @@ class FMediaKitEngine implements FPlaybackEngine {
   @override
   Future<void> seekToDefaultPosition() async {
     if (!_isLive) return seekTo(Duration.zero);
+    if (_player == null || _isDisposed) return;
     await _native.command(['seek', '100', 'absolute-percent']);
     _emitProgress();
   }
@@ -309,7 +343,7 @@ class FMediaKitEngine implements FPlaybackEngine {
   @override
   Future<void> selectTrack(FTrackType type, String? id) async {
     final player = _player;
-    if (player == null) return;
+    if (player == null || _isDisposed) return;
 
     // Looked up rather than rebuilt from the id: media_kit treats a track it added from a URI
     // differently from one the container holds, and only the listed instance knows which it is.
@@ -348,9 +382,9 @@ class FMediaKitEngine implements FPlaybackEngine {
 
   @override
   Future<void> setPreferredLanguages({List<String>? audio, List<String>? text}) async {
-    if (_player == null) return;
+    if (_player == null || _isDisposed) return;
     if (audio != null) await _native.setProperty('alang', audio.join(','));
-    if (text != null) await _native.setProperty('slang', text.join(','));
+    if (text != null && !_isDisposed) await _native.setProperty('slang', text.join(','));
   }
 
   /// Side-loads a subtitle file into the loaded media.
@@ -359,7 +393,7 @@ class FMediaKitEngine implements FPlaybackEngine {
   /// source are not carried — mpv fetches it with the player's own request options.
   @override
   Future<void> addSubtitle(FSubtitleSource subtitle) async {
-    if (_player == null) return;
+    if (_player == null || _isDisposed) return;
     if (subtitle.selectedByDefault) _isTextDisabled = false;
     await _native.command([
       'sub-add',
@@ -481,6 +515,7 @@ class FMediaKitEngine implements FPlaybackEngine {
   /// changes the rect that would otherwise announce it.
   void _releaseMediaState() {
     _size = Size.zero;
+    _outputSize = null;
     _duration = null;
     _tracks = const mk.Tracks();
     _selected.updateAll((_, _) => null);
@@ -562,11 +597,70 @@ class FMediaKitEngine implements FPlaybackEngine {
     if (video == null || _isDisposed) return;
     final id = video.id.value;
     final rect = video.rect.value;
-    final next = id != null && rect != null && rect.width > 1 && rect.height > 1 ? id : null;
+    final isReal = id != null && rect != null && rect.width > 1 && rect.height > 1;
+    final next = isReal && _hasTextureCaughtUp(rect) ? id : null;
     if (next == _textureId) return;
+    final wasShown = _textureId != null;
     _textureId = next;
+    if (next == null && wasShown) {
+      // Taken off screen now, not at the next progress tick: the texture is about to be torn
+      // down, and it must not be on screen while that happens. A zero size is what makes the
+      // controller notify, and the surface drops the `Texture` widget on the next frame.
+      _size = Size.zero;
+      _emit(
+        FEngineVideoSizeChanged(
+          size: _size,
+          rotationDegrees: _rotationDegrees,
+          pixelAspectRatio: _pixelAspectRatio,
+        ),
+      );
+      return;
+    }
     _emitVideoSize();
   }
+
+  /// The texture size the picture being decoded needs — mpv's display size, turned upright — or
+  /// null while no picture has been described since the last load.
+  Size? _outputSize;
+
+  void _onVideoParams(mk.VideoParams params) {
+    final dw = params.dw;
+    final dh = params.dh;
+    if (dw != null && dh != null && dw > 0 && dh > 0) {
+      final isSideways = (params.rotate ?? 0) % 180 == 90;
+      final next = isSideways
+          ? Size(dh.toDouble(), dw.toDouble())
+          : Size(dw.toDouble(), dh.toDouble());
+      if (next != _outputSize) {
+        _outputSize = next;
+        // A new size means media_kit is about to replace the texture: hide it first.
+        _onTextureChanged();
+      }
+    }
+    _emitVideoSize();
+  }
+
+  /// Whether the texture in [rect] is the one sized for the current picture, on Windows.
+  ///
+  /// media_kit_video's Windows renderer resizes by destroying the D3D textures and registering new
+  /// ones, without holding the lock Flutter's raster thread takes to read them. A frame composited
+  /// in that moment copies from a released texture, or looks up an id not yet in the renderer's
+  /// map, and either one terminates the process: the app closing on Windows when a video starts,
+  /// when the next episode has a different resolution, when the quality changes. Showing the
+  /// texture only once it has been rebuilt at the picture's size means nothing reads it while
+  /// that happens. macOS and Linux renderers do not share the race, and keep the old rule.
+  bool _hasTextureCaughtUp(Rect rect) {
+    if (!Platform.isWindows) return true;
+    final expected = _outputSize;
+    if (expected == null) return false;
+    if (rect.width == expected.width && rect.height == expected.height) return true;
+    // The software fallback caps each side on its own (`SW_RENDERING_MAX_WIDTH` and `_HEIGHT`).
+    return rect.width == math.min(expected.width, _swMaxWidth) &&
+        rect.height == math.min(expected.height, _swMaxHeight);
+  }
+
+  static const double _swMaxWidth = 1920;
+  static const double _swMaxHeight = 1080;
 
   void _onPlayingChanged(bool isPlaying) {
     _emit(FEnginePlayingChanged(isPlaying: isPlaying));
@@ -596,11 +690,41 @@ class FMediaKitEngine implements FPlaybackEngine {
   }
 
   void _onCompletedChanged(bool isCompleted) {
+    if (isCompleted && _hasStoppedShort()) {
+      // Not the end of the video: the end of what mpv could read. A connection that went quiet
+      // past `network-timeout`, or a segment that kept failing, reaches mpv as the end of the
+      // file, and reporting it as one closed the player — or skipped to the next episode — in
+      // the middle of a film. A retryable failure goes through the retry ladder instead, whose
+      // reload picks up from where playback had got to.
+      _fail(
+        FPlayerError(
+          code: FPlayerErrorCode.network,
+          message: 'The stream stopped at ${_player?.state.position} of $_duration',
+          isRetryable: true,
+        ),
+      );
+      return;
+    }
     _hasCompleted = isCompleted;
     if (!isCompleted) return;
     _stopTicker();
     _emitProgress();
     _emit(const FEnginePlaybackStateChanged(FEnginePlaybackState.ended));
+  }
+
+  /// How far short of the described duration an end may land and still be the real one.
+  ///
+  /// Containers round their duration, and the last frame is rarely exactly at it.
+  static const Duration _endTolerance = Duration(seconds: 5);
+
+  /// Whether mpv reached "the end" well before the end the media described.
+  ///
+  /// Only for on-demand media with a duration: a live stream has no end to compare against.
+  bool _hasStoppedShort() {
+    final duration = _duration;
+    final player = _player;
+    if (duration == null || _isLive || player == null) return false;
+    return player.state.position < duration - _endTolerance;
   }
 
   void _onDurationChanged(Duration duration) {
