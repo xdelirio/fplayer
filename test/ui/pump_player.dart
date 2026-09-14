@@ -25,6 +25,7 @@ Future<void> pumpPlayer(
   required FPlayerController controller,
   FUiConfig config = const FUiConfig(),
   Size size = const Size(800, 450),
+  Widget Function(BuildContext context, FPlayerUi ui)? bottomBarBuilder,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -45,8 +46,11 @@ Future<void> pumpPlayer(
             child: FocusTraversalGroup(
               child: Navigator(
                 onGenerateRoute: (settings) => PageRouteBuilder<void>(
-                  pageBuilder: (context, _, _) =>
-                      FPlayerView(controller: controller, config: config),
+                  pageBuilder: (context, _, _) => FPlayerView(
+                    controller: controller,
+                    config: config,
+                    bottomBarBuilder: bottomBarBuilder,
+                  ),
                 ),
               ),
             ),

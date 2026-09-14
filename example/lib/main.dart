@@ -186,9 +186,16 @@ class _DemoPageState extends State<DemoPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (context) => const TvDemoPage()),
-        ),
+        onPressed: () async {
+          // Stopped, not paused: a paused player still holds its hardware decoder, and a
+          // television has one or two of them. The page opening next would be handed a software
+          // decoder and stutter.
+          await _controller.stop();
+          if (!context.mounted) return;
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (context) => const TvDemoPage()),
+          );
+        },
         icon: const Icon(Icons.tv),
         label: const Text('TV layout'),
       ),

@@ -83,6 +83,224 @@ void main() {
     expect(uiOf(tester).areControlsVisible, isFalse);
   });
 
+  testWidgets('the chrome is not rebuilt while it is off screen', (tester) async {
+    var builds = 0;
+    await pumpPlayer(
+      tester,
+      controller: controller,
+      config: const FUiConfig(
+        showControlsOnStart: true,
+        controlsTimeout: Duration(seconds: 2),
+      ),
+      bottomBarBuilder: (context, ui) {
+        builds++;
+        return const SizedBox(height: 40);
+      },
+    );
+    await controller.open(source);
+    engine.becomeReady();
+    await tester.pump();
+    expect(builds, greaterThan(0));
+
+    // Let it fade out, then play on. Every tick used to rebuild the whole chrome — seek bar,
+    // volume slider, a dozen buttons — behind an opacity of zero.
+    for (var i = 1; i <= 12; i++) {
+      tick(Duration(milliseconds: 250 * i));
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(uiOf(tester).areControlsVisible, isFalse);
+
+    final whileHidden = builds;
+    for (var i = 13; i <= 24; i++) {
+      tick(Duration(milliseconds: 250 * i));
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(builds, whileHidden, reason: 'nothing rebuilds a chrome nobody can see');
+
+    // And it is up to date again the moment it is asked for.
+    uiOf(tester).showControls();
+    await tester.pump();
+    expect(builds, greaterThan(whileHidden));
+    await settlePlayer(tester);
+  });
+
+  testWidgets('a host rebuilding on every tick does not rebuild the hidden chrome',
+      (tester) async {
+    var builds = 0;
+    tester.view.physicalSize = const Size(800, 450);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    // The shape of an ordinary player page: the whole view inside a builder on the same
+    // controller, with a config that is not const.
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: MediaQuery(
+          data: const MediaQueryData(),
+          child: Navigator(
+            onGenerateRoute: (settings) => PageRouteBuilder<void>(
+              pageBuilder: (context, _, _) => ListenableBuilder(
+                listenable: controller,
+                builder: (context, _) => FPlayerView(
+                  controller: controller,
+                  // ignore: prefer_const_constructors
+                  config: FUiConfig(controlsTimeout: const Duration(seconds: 2)),
+                  bottomBarBuilder: (context, ui) {
+                    builds++;
+                    return const SizedBox(height: 40);
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await controller.open(source);
+    engine.becomeReady();
+    await tester.pump();
+    uiOf(tester).showControls();
+    await tester.pump();
+
+    for (var i = 1; i <= 12; i++) {
+      tick(Duration(milliseconds: 250 * i));
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(uiOf(tester).areControlsVisible, isFalse);
+
+    final whileHidden = builds;
+    for (var i = 13; i <= 24; i++) {
+      tick(Duration(milliseconds: 250 * i));
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(builds, whileHidden, reason: 'a new widget is not a reason to rebuild what is hidden');
+    await settlePlayer(tester);
+  });
+
+  testWidgets('an episode ending in a queue does not close fullscreen', (tester) async {
+    await pumpPlayer(
+      tester,
+      controller: controller,
+      config: const FUiConfig(showControlsOnStart: true),
+    );
+    await controller.setPlaylist(const [
+      FPlayerSource.network('https://example.com/1.m3u8'),
+      FPlayerSource.network('https://example.com/2.m3u8'),
+    ]);
+    engine.becomeReady();
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.fullscreen));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.fullscreen_exit), findsOneWidget);
+
+    // The next item loads behind a spinner that never settles, so the frames are counted out.
+    engine.emit(const FEnginePlaybackStateChanged(FEnginePlaybackState.ended));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 150));
+    }
+    expect(
+      find.byIcon(Icons.fullscreen_exit),
+      findsOneWidget,
+      reason: 'the next episode is about to start; the viewer is still watching',
+    );
+
+    // The last one ending is the end of watching, and fullscreen goes as it always did.
+    engine.becomeReady();
+    await tester.pump();
+    engine.emit(const FEnginePlaybackStateChanged(FEnginePlaybackState.ended));
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.fullscreen_exit), findsNothing);
+    expect(find.byIcon(Icons.fullscreen), findsOneWidget);
+  });
+
+  group('a host-owned full-screen page on a television', () {
+    Future<void> hostPage(WidgetTester tester, {VoidCallback? onBack}) async {
+      tester.view.physicalSize = const Size(800, 450);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: MediaQuery(
+            data: const MediaQueryData(),
+            // The player page on top of the host's home, the way an app reaches it: a pop here
+            // would have somewhere to go.
+            child: Navigator(
+              initialRoute: '/player',
+              onGenerateRoute: (settings) => PageRouteBuilder<void>(
+                settings: settings,
+                pageBuilder: (context, _, _) => settings.name == '/player'
+                    ? FPlayerView(
+                        controller: controller,
+                        config: const FUiConfig.tv(),
+                        isFullscreen: true,
+                        onBack: onBack,
+                      )
+                    : const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await controller.open(source);
+      engine.becomeReady(duration: const Duration(minutes: 10));
+      await tester.pump();
+    }
+
+    testWidgets('a video reaching its end leaves the page standing', (tester) async {
+      await hostPage(tester);
+
+      engine.emit(const FEnginePlaybackStateChanged(FEnginePlaybackState.ended));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+
+      expect(find.byType(FPlayerView), findsOneWidget, reason: 'the page is the host’s to close');
+      await settlePlayer(tester);
+    });
+
+    testWidgets('back runs the host callback', (tester) async {
+      var backs = 0;
+      await hostPage(tester, onBack: () => backs++);
+
+      uiOf(tester).back();
+      await tester.pump();
+
+      expect(backs, 1);
+      expect(find.byType(FPlayerView), findsOneWidget);
+      await settlePlayer(tester);
+    });
+  });
+
+  Future<void> openSettingsPanel(WidgetTester tester, FUiConfig config) async {
+    await pumpPlayer(tester, controller: controller, config: config);
+    await controller.open(source);
+    engine.becomeReady();
+    await tester.pump();
+    uiOf(tester).openPanel(FPlayerPanel.settings);
+    await tester.pump();
+  }
+
+  testWidgets('a panel under touch keeps its frosted plate', (tester) async {
+    await openSettingsPanel(tester, const FUiConfig(showControlsOnStart: true));
+    expect(find.byType(BackdropFilter), findsOneWidget);
+    await settlePlayer(tester);
+  });
+
+  testWidgets('a panel under a remote is a plain plate, not a blur', (tester) async {
+    // On a television the picture is a SurfaceView the blur cannot sample, and every frame of it
+    // was rasterised on the thread the decoder's callbacks share.
+    await openSettingsPanel(
+      tester,
+      const FUiConfig(showControlsOnStart: true, tv: FTvConfig(mode: FTvMode.enabled)),
+    );
+    expect(find.byType(BackdropFilter), findsNothing);
+    await settlePlayer(tester);
+  });
+
   testWidgets('the exit-fullscreen control leaves fullscreen', (tester) async {
     await pumpPlayer(
       tester,

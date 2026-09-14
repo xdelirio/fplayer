@@ -51,6 +51,16 @@ class FDesktopLayerState extends State<FDesktopLayer> {
 
   Timer? _leaveTimer;
 
+  /// Since the last pointer move this layer acted on.
+  ///
+  /// A mouse crossing the picture reports a hover every few milliseconds, and each one cancelled
+  /// and re-armed the auto-hide countdown. The chrome only has to come back once; after that,
+  /// restarting the countdown a handful of times a second says exactly as much.
+  final Stopwatch _sinceMove = Stopwatch();
+
+  /// How long a move is worth acting on again while the chrome is already up.
+  static const Duration _moveInterval = Duration(milliseconds: 100);
+
   FPlayerUi get _ui => widget.ui;
 
   @override
@@ -89,6 +99,16 @@ class FDesktopLayerState extends State<FDesktopLayer> {
   void _onPointerMoved() {
     _leaveTimer?.cancel();
     if (_ui.isLocked) return;
+    // Chrome that is away comes back on the first move, with no wait; from then on the move is
+    // only worth the countdown it restarts.
+    if (_ui.areControlsVisible &&
+        _sinceMove.isRunning &&
+        _sinceMove.elapsed < _moveInterval) {
+      return;
+    }
+    _sinceMove
+      ..reset()
+      ..start();
     _ui.showControls();
   }
 

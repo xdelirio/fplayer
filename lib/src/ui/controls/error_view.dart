@@ -22,42 +22,88 @@ class FErrorView extends StatelessWidget {
     final theme = ui.theme;
     final l10n = ui.localizations;
 
+    // This view is opaque and sits over the chrome, so the top bar's back button is out of reach
+    // exactly when it is the only control that can still do anything: a video that will never
+    // play leaves nothing else to try. The way out is repeated here, in the corner where the
+    // chrome keeps it and as a labelled button beside Retry — findable without hunting the
+    // corner, and reachable with a D-pad.
+    //
+    // Fullscreen counts even where the host hid the back button: there, back leaves fullscreen,
+    // and a failed video in fullscreen is otherwise a screen with no exit at all.
+    final showsBack = ui.config.showBackButton || ui.isFullscreen;
+
     return ColoredBox(
       color: const Color(0xE6000000),
-      child: Center(
-        child: Padding(
-          padding: EdgeInsets.all(theme.spacing * 3),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _iconFor(error.code),
-                size: theme.primaryIconSize,
-                color: theme.mutedForeground,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            child: Padding(
+              padding: EdgeInsets.all(theme.spacing * 3),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _iconFor(error.code),
+                    size: theme.primaryIconSize,
+                    color: theme.mutedForeground,
+                  ),
+                  SizedBox(height: theme.spacing * 1.5),
+                  Text(
+                    l10n.errorTitle,
+                    textAlign: TextAlign.center,
+                    style: theme.titleStyle.copyWith(color: theme.foreground),
+                  ),
+                  SizedBox(height: theme.spacing / 2),
+                  Text(
+                    messageFor(error.code, l10n),
+                    textAlign: TextAlign.center,
+                    style: theme.subtitleStyle.copyWith(color: theme.mutedForeground),
+                  ),
+                  if (error.isRetryable || showsBack) ...[
+                    SizedBox(height: theme.spacing * 2),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (error.isRetryable)
+                          FPlayerTextButton(
+                            label: l10n.retry,
+                            theme: theme,
+                            onPressed: ui.controller.retry,
+                          ),
+                        if (error.isRetryable && showsBack)
+                          SizedBox(width: theme.spacing),
+                        if (showsBack)
+                          FPlayerTextButton(
+                            key: const Key('fplayer.error-back'),
+                            label: l10n.back,
+                            theme: theme,
+                            onPressed: ui.back,
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
-              SizedBox(height: theme.spacing * 1.5),
-              Text(
-                l10n.errorTitle,
-                textAlign: TextAlign.center,
-                style: theme.titleStyle.copyWith(color: theme.foreground),
-              ),
-              SizedBox(height: theme.spacing / 2),
-              Text(
-                messageFor(error.code, l10n),
-                textAlign: TextAlign.center,
-                style: theme.subtitleStyle.copyWith(color: theme.mutedForeground),
-              ),
-              if (error.isRetryable) ...[
-                SizedBox(height: theme.spacing * 2),
-                FPlayerTextButton(
-                  label: l10n.retry,
-                  theme: theme,
-                  onPressed: ui.controller.retry,
-                ),
-              ],
-            ],
+            ),
           ),
-        ),
+          if (showsBack)
+            Align(
+              alignment: Alignment.topLeft,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: theme.padding,
+                  child: FPlayerButton(
+                    icon: Icons.arrow_back,
+                    theme: theme,
+                    semanticLabel: l10n.back,
+                    onPressed: ui.back,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

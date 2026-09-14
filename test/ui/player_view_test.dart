@@ -37,6 +37,7 @@ void main() {
     // opposite; that is covered by its own test.
     FUiConfig config = const FUiConfig(showControlsOnStart: true),
     Size size = const Size(800, 450),
+    VoidCallback? onBack,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -50,7 +51,7 @@ void main() {
           child: Navigator(
             onGenerateRoute: (settings) => PageRouteBuilder<void>(
               pageBuilder: (context, _, _) =>
-                  FPlayerView(controller: controller, config: config),
+                  FPlayerView(controller: controller, config: config, onBack: onBack),
             ),
           ),
         ),
@@ -162,6 +163,36 @@ void main() {
     expect(find.text(const FPlayerLocalizations().errorNotFound), findsOneWidget);
     // Not retryable, so no button to press.
     expect(find.text(const FPlayerLocalizations().retry), findsNothing);
+  });
+
+  testWidgets('a fatal error still offers a way out of the player', (tester) async {
+    // The error view covers the chrome, so the top bar's back button goes with it. A video that
+    // will never play and no way to leave it is an app the viewer has to kill.
+    var backs = 0;
+    await pumpPlayer(tester, onBack: () => backs++);
+    await controller.open(const FPlayerSource.network('https://example.com/a.m3u8'));
+    engine.becomeReady();
+    await tester.pump();
+
+    engine.emit(
+      const FEngineFailed(
+        FPlayerError(code: FPlayerErrorCode.notFound, message: 'gone'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text(const FPlayerLocalizations().back));
+    await tester.pump();
+    expect(backs, 1);
+
+    // And the arrow in the corner, where the chrome keeps it.
+    await tester.tap(find.descendant(
+      of: find.byType(FErrorView),
+      matching: find.byIcon(Icons.arrow_back),
+    ));
+    await tester.pump();
+    expect(backs, 2);
   });
 
   testWidgets('a retryable error offers a retry that reaches the engine', (tester) async {

@@ -186,6 +186,11 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
       widget.controller.addListener(_onPlaybackChanged);
     }
     if (oldWidget.config.fit != widget.config.fit) _fit = widget.config.fit;
+    // The hidden chrome is deliberately kept across a new widget. A host that wraps the player
+    // in a `ListenableBuilder` on the same controller — the obvious way to build a player page —
+    // hands over a fresh widget, and a fresh non-const config, on every progress tick; dropping
+    // the cache there rebuilt the whole invisible chrome four times a second again. Nothing is
+    // lost by keeping it: the chrome is built anew the moment it comes back on screen.
   }
 
   @override
@@ -408,8 +413,16 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
 
   @override
   void back() {
-    if (widget.isFullscreen) {
+    // Only the copy this view pushed is a route back may close. A page the host built with
+    // `isFullscreen: true` is theirs — on a television as much as on a desktop: there, back
+    // means whatever they said it means, and a window we put into fullscreen is given back
+    // first — the same order Escape follows.
+    if (widget.isFullscreen && _isOwnFullscreenRoute) {
       _leaveFullscreen();
+      return;
+    }
+    if (widget.isFullscreen && _isWindowFullscreen) {
+      unawaited(toggleFullscreen());
       return;
     }
     if (widget.onBack != null) {
@@ -476,7 +489,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
     }
 
     if (widget.fullscreen.exitOnComplete && widget.isFullscreen && value.isCompleted) {
-      _leaveFullscreen();
+      _exitFullscreenOnComplete();
     } else if (widget.fullscreen.autoOnPlay &&
         !widget.isFullscreen &&
         !_hasAutoEnteredFullscreen &&
@@ -488,6 +501,36 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
     }
 
     setState(() {});
+  }
+
+  /// What "leave fullscreen when the media ends" means for this view.
+  ///
+  /// The copy this view pushed is popped, as before. A page the host built with
+  /// `isFullscreen: true` is not ours to close: on a desktop, fullscreen there is the window, so
+  /// the end of a video gives the window back and leaves the page standing. Popping it is how a
+  /// video reaching its end closed the player and took the screen around it along.
+  ///
+  /// Not at all when the controller is about to play the next item: the end of an episode in a
+  /// queue is not the end of watching, and closing the player between two of them dropped the
+  /// viewer out of a series they had not asked to leave.
+  ///
+  /// On a television or a phone a host's page is left alone entirely — it has no window to give
+  /// back, and closing it is the host's call, which `FCompleted` is there to tell them about.
+  void _exitFullscreenOnComplete() {
+    if (_willAutoAdvance) return;
+    if (!_isOwnFullscreenRoute) {
+      if (_isDesktop && _isWindowFullscreen) unawaited(toggleFullscreen());
+      return;
+    }
+    _leaveFullscreen();
+  }
+
+  /// Whether the controller moves on to another item by itself when this one ends.
+  bool get _willAutoAdvance {
+    final value = widget.controller.value;
+    final playback = widget.controller.config.playback;
+    if (!playback.autoAdvance || !value.hasPlaylist) return false;
+    return value.hasNext || playback.repeatPlaylist;
   }
 
   void _restartHideTimer() {
@@ -647,7 +690,11 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
                     child: AnimatedOpacity(
                       opacity: _areControlsVisible ? 1 : 0,
                       duration: const Duration(milliseconds: 180),
-                      child: _buildChrome(context),
+                      // Its own layer, so the seek bar moving four times a second repaints the
+                      // chrome and not everything stacked with it. On a television, where the
+                      // picture is a platform view, every repaint above it is rasterised on the
+                      // thread the decoder's callbacks share.
+                      child: RepaintBoundary(child: _chrome(context)),
                     ),
                   ),
                 ),
@@ -673,7 +720,10 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
           // reports the player as simply not playing. Without this the viewer gets a play button
           // that does nothing and no hint as to why.
           if (value.status.isWaiting || value.isWaitingForNetwork)
-            widget.loadingBuilder?.call(context, this) ?? _Spinner(ui: this),
+            // Sixty repaints a second for as long as a stall lasts; kept to its own layer.
+            RepaintBoundary(
+              child: widget.loadingBuilder?.call(context, this) ?? _Spinner(ui: this),
+            ),
           if (value.hasError)
             widget.errorBuilder?.call(context, this, value.error!) ??
                 FErrorView(ui: this, error: value.error!),
@@ -716,6 +766,24 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   FTvConfig get _tvConfig => _isDesktop && widget.config.tv.mode == FTvMode.auto
       ? widget.config.tv.copyWith(mode: FTvMode.disabled)
       : widget.config.tv;
+
+  /// The last chrome built while it was on screen.
+  ///
+  /// Playback notifies several times a second, and every one of those rebuilt the whole chrome —
+  /// the seek bar, the volume slider, a dozen buttons, the scrolling row of pickers — while it
+  /// sat faded out over a film nobody was reaching for. Handing the element the *same widget
+  /// instance* is how Flutter is told a subtree has not changed: it stops at the identity check
+  /// instead of descending into it.
+  Widget? _chromeWhileHidden;
+
+  /// The chrome, rebuilt only while it is on screen.
+  ///
+  /// What it shows is frozen as it fades out, which is what the viewer sees anyway; the first
+  /// build after it comes back is a fresh one.
+  Widget _chrome(BuildContext context) {
+    if (!_areControlsVisible && _chromeWhileHidden != null) return _chromeWhileHidden!;
+    return _chromeWhileHidden = _buildChrome(context);
+  }
 
   /// The chrome for the input at hand. Both take the same bands from the same builders; only
   /// what fills in when a builder is not given differs.

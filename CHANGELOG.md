@@ -25,8 +25,87 @@
   picture to on a desktop. Both through `window_manager`, in
   `fplayer_media_kit` only.
 
+### Changed
+
+- **The chrome is no longer rebuilt while it is off screen.** Playback notifies
+  several times a second, and every one of those rebuilt the whole chrome — the
+  seek bar, the volume slider, a dozen buttons, the scrolling row of pickers —
+  behind an opacity of zero. It is now rebuilt only while it is on screen, and
+  freshly the moment it comes back. On a desktop, the mouse gets the same
+  treatment from the other side: a hover used to cancel and re-arm the
+  auto-hide countdown on every one of the hundred events a second a trackpad
+  reports, and now does so at most ten times a second. Hidden chrome still
+  comes back on the first move, with no wait.
+
 ### Fixed
 
+- **mpv engine on Linux: a black picture.** media_kit_video's Linux texture
+  reports its real size only from inside Flutter's request for a frame, and
+  Flutter only asks a texture that is on screen. The engine kept the texture
+  hidden until that size arrived, so it never did. On Linux the texture now
+  goes up as soon as the picture is described. mpv's warnings and errors are
+  also printed, as `fplayer: mpv [level] prefix: text`.
+- **mpv engine on Windows: the app closed when a picture changed size.**
+  media_kit_video's Windows renderer rebuilds its D3D textures on every resize
+  without the lock Flutter's raster thread reads them under, and publishes the
+  new texture id before registering it: a frame composited at that moment
+  copied from a released texture or looked up a missing id, and the process
+  died — on the first frame, on an episode of a different resolution, on a
+  quality change. The texture is now shown only once it has been rebuilt at
+  the picture's size, and taken off screen as soon as a new size is announced.
+  Hardware decoding on Windows also goes through `hwdec=auto-copy`, off the
+  D3D11-to-ANGLE interop that crashes inside some Intel and AMD drivers.
+- **Android: nothing said when a television fell back to a software decoder.**
+  A box has one or two hardware decoder instances, and a second player still
+  holding one — paused counts — silently hands the next a software decoder
+  that plays 4K or AV1 at a few frames a second. The decoder in use and every
+  batch of dropped frames are now logged under the `fplayer` tag. The example
+  stops its player before opening the TV page. The chrome and the loading
+  spinner repaint in their own layers.
+- **A finished video closed a host's own player page on a television too, and
+  an episode ending closed fullscreen between two of a queue.** The desktop
+  fix below left `exitOnComplete` popping any route on every other platform,
+  so a leanback page built with `isFullscreen: true` went away when its video
+  ended. Only the copy the player pushed is popped now, everywhere; and not at
+  all while `autoAdvance` is about to play the next item. `back` on such a page
+  runs the host's `onBack` on a television as it does on a desktop.
+- **mpv engine: a network stall "finished" the video.** mpv gives up on a read
+  after `network-timeout` — five seconds in media_kit — and treats the file as
+  ended, which closed the player or skipped to the next episode mid-film. An
+  end more than five seconds short of the duration is now a retryable failure,
+  and the retry ladder reloads from where playback was; `network-timeout`
+  follows `FNetworkConfig`'s timeouts. Also: `FDecoderMode.softwareOnly` no
+  longer switches media_kit to CPU rendering (it sets `hwdec=no` instead), and
+  leaving the page while a source is loading no longer throws from the calls into a
+  disposed player.
+- **Android: the buffer could outgrow the Java heap on a television.** Media3
+  keeps buffered media on the heap, and `prioritizeTimeOverSizeThresholds` —
+  on in both buffer presets — sets its byte target aside, so a high-bitrate
+  stream on a box with a small heap ended in an OutOfMemoryError. Loading now
+  stops at two fifths of the heap whatever the buffer config says. A video
+  view asked for after its player was released is blank instead of an error.
+- **Panels stuttered under a remote.** The settings and track panels blurred
+  what was behind them, which on a television is a SurfaceView the blur cannot
+  sample and whose frames Flutter rasterises on the platform thread. Under a
+  remote the panel is a plain, nearly opaque plate.
+- **A host rebuilding its page on every tick rebuilt the hidden chrome again.**
+  A new `FPlayerView` widget — what a `ListenableBuilder` on the controller
+  hands over four times a second — threw away the cached chrome.
+- **A finished video closed a host's own full-window player on a desktop.**
+  `exitOnComplete` is on by default and popped the route, which on a page the
+  host built with `isFullscreen: true` is their page, not ours: the video
+  ended and the player — and the screen around it — went with it. On a desktop
+  the end of a video now gives the *window* back and leaves the page standing,
+  the same rule the F key already follows. `back` follows it too: on such a
+  page it gives a fullscreen window back first, then runs the host's `onBack`
+  rather than popping a route the player never pushed.
+- **A failed video was a dead end.** `FErrorView` is opaque and sits over the
+  chrome, so the back button in the top bar went with it: a video that will
+  never play — a 404, an expired link — left nothing to press, and the viewer
+  had to kill the app. The view now carries the way out itself: the arrow in
+  the corner where the chrome keeps it, and a labelled `Back` button beside
+  `Retry` that a D-pad can reach. Shown when `FUiConfig.showBackButton` is on,
+  and in fullscreen regardless, where back leaves fullscreen.
 - **F closed a host's own full-window player on a desktop.** `FPlayerView`
   with `isFullscreen: true` on a route the host built popped that route on
   every fullscreen toggle — the button, F, a double-click — which on a desktop
