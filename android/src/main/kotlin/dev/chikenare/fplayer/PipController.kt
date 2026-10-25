@@ -258,7 +258,12 @@ internal class PipController(
         builder.setActions(remoteActions(owner, actions))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            builder.setAutoEnterEnabled(autoEnterRequested)
+            // Only while something is playing, and so has a frame to show. Armed regardless, a
+            // player that failed to load — or never got a picture — shrank the app into a black
+            // window on Home. The params are rebuilt on every play/pause, which keeps this current.
+            builder.setAutoEnterEnabled(
+                autoEnterRequested && owner.pipIsPlaying && owner.pipAspectRatio != null,
+            )
             // Without this the system crossfades on every resize, which looks like a glitch on a
             // surface that is already producing frames at the new size.
             builder.setSeamlessResizeEnabled(true)

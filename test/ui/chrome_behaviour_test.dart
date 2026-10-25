@@ -124,6 +124,48 @@ void main() {
     await settlePlayer(tester);
   });
 
+  testWidgets('a progress tick moves the readout without rebuilding the view', (tester) async {
+    await pumpPlayer(
+      tester,
+      controller: controller,
+      config: const FUiConfig(showControlsOnStart: true),
+    );
+    await controller.open(source);
+    engine.becomeReady(duration: const Duration(minutes: 10));
+    await tester.pump();
+    expect(uiOf(tester).areControlsVisible, isTrue);
+
+    // The same widget instance before and after means the view's build did not run: the
+    // surface, the gesture layer and every button were left alone.
+    final chrome = tester.widget(find.byType(FControlsOverlay));
+    for (var i = 1; i <= 8; i++) {
+      tick(Duration(milliseconds: 250 * i));
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+
+    expect(identical(tester.widget(find.byType(FControlsOverlay)), chrome), isTrue);
+    expect(find.text('0:02'), findsOneWidget, reason: 'the position still follows playback');
+    await settlePlayer(tester);
+  });
+
+  testWidgets('a host band still follows the position while the chrome is up', (tester) async {
+    await pumpPlayer(
+      tester,
+      controller: controller,
+      config: const FUiConfig(showControlsOnStart: true),
+      bottomBarBuilder: (context, ui) => Text('at ${ui.displayPosition.inSeconds}'),
+    );
+    await controller.open(source);
+    engine.becomeReady(duration: const Duration(minutes: 10));
+    await tester.pump();
+
+    tick(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('at 3'), findsOneWidget);
+    await settlePlayer(tester);
+  });
+
   testWidgets('a host rebuilding on every tick does not rebuild the hidden chrome',
       (tester) async {
     var builds = 0;

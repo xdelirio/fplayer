@@ -22,6 +22,9 @@ internal class WindowController {
     /** Brightness override in `0..1`, or null while the system value is in force. */
     private var override: Float? = null
 
+    /** The player that set [override], so its disposal can hand the screen back. */
+    private var overrideOwner: Long? = null
+
     fun attach(activity: Activity) {
         this.activity = activity
         // A configuration change rebuilds the Activity with a fresh window, so both settings have
@@ -42,7 +45,16 @@ internal class WindowController {
         if (changed) applyKeepScreenOn()
     }
 
-    fun release(playerId: Long) = setKeepScreenOn(playerId, false)
+    /**
+     * Lets go of everything [playerId] asked of the window.
+     *
+     * Brightness included: the override lives on the Activity's window, not on the player, so
+     * left in place it dimmed or lit every other screen of the app long after the video closed.
+     */
+    fun release(playerId: Long) {
+        setKeepScreenOn(playerId, false)
+        if (overrideOwner == playerId) setBrightness(playerId, null)
+    }
 
     /**
      * Sets the window's brightness, or restores the system value when [value] is null.
@@ -50,8 +62,12 @@ internal class WindowController {
      * Scoped to this window: it does not touch the device setting, so leaving the app — or
      * crashing — puts the screen back to normal on its own.
      */
-    fun setBrightness(value: Double?) {
+    fun setBrightness(
+        playerId: Long,
+        value: Double?,
+    ) {
         override = value?.toFloat()?.coerceIn(0f, 1f)
+        overrideOwner = if (override == null) null else playerId
         applyBrightness()
     }
 
@@ -67,7 +83,9 @@ internal class WindowController {
 
         val resolver = activity?.contentResolver ?: return 0.5
         return try {
-            Settings.System.getInt(resolver, Settings.System.SCREEN_BRIGHTNESS) / 255.0
+            // Some vendors widen the range past 255; a start above 1 made the first drag stall.
+            (Settings.System.getInt(resolver, Settings.System.SCREEN_BRIGHTNESS) / 255.0)
+                .coerceIn(0.0, 1.0)
         } catch (e: Settings.SettingNotFoundException) {
             0.5
         }

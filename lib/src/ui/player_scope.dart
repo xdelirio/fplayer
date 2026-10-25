@@ -29,6 +29,13 @@ abstract interface class FPlayerUi {
   /// finger.
   Duration get displayPosition;
 
+  /// Fires whenever [displayPosition] may have moved: on every progress tick and every scrub
+  /// update.
+  ///
+  /// The view does not rebuild on those — only when something other than the position changes —
+  /// so a widget that shows the position listens here, most simply through [FPositionBuilder].
+  Listenable get positionListenable;
+
   FVideoFit get fit;
 
   bool get isFullscreen;
@@ -126,4 +133,59 @@ class FPlayerScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(FPlayerScope oldWidget) => oldWidget.ui != ui;
+}
+
+/// Rebuilds [builder] as the playhead moves.
+///
+/// `FPlayerView` does not rebuild on progress ticks: rebuilding the whole stack four times a
+/// second was the price of every readout reading the position off the view's own build. A widget
+/// that shows the position wraps just that part in this, so a tick rebuilds the readout alone.
+///
+/// While the controls are faded out nothing is rebuilt, unless [whileHidden] is set for
+/// something that stays on screen without them. The chrome is built afresh when it comes back.
+class FPositionBuilder extends StatefulWidget {
+  const FPositionBuilder({
+    required this.ui,
+    required this.builder,
+    this.whileHidden = false,
+    super.key,
+  });
+
+  final FPlayerUi ui;
+  final WidgetBuilder builder;
+  final bool whileHidden;
+
+  @override
+  State<FPositionBuilder> createState() => _FPositionBuilderState();
+}
+
+class _FPositionBuilderState extends State<FPositionBuilder> {
+  @override
+  void initState() {
+    super.initState();
+    widget.ui.positionListenable.addListener(_onTick);
+  }
+
+  @override
+  void didUpdateWidget(FPositionBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final old = oldWidget.ui.positionListenable;
+    final next = widget.ui.positionListenable;
+    if (identical(old, next)) return;
+    old.removeListener(_onTick);
+    next.addListener(_onTick);
+  }
+
+  @override
+  void dispose() {
+    widget.ui.positionListenable.removeListener(_onTick);
+    super.dispose();
+  }
+
+  void _onTick() {
+    if (widget.whileHidden || widget.ui.areControlsVisible) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
 }

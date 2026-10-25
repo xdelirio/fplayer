@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fplayer/fplayer.dart';
 
@@ -19,6 +20,7 @@ void main() {
   Future<void> ready(
     WidgetTester tester, {
     FUiConfig config = const FUiConfig(),
+    bool withControls = false,
   }) async {
     await pumpPlayer(tester, controller: controller, config: config);
     await controller.open(const FPlayerSource.network('https://example.com/a.m3u8'));
@@ -28,7 +30,9 @@ void main() {
     await controller.seekTo(const Duration(minutes: 5));
     // The chrome sits above the gesture layer and the play button occupies the exact centre, so
     // gestures are exercised in the state they are actually used in: with the controls faded out.
-    uiOf(tester).hideControls();
+    //
+    // Drags are the exception: they only exist while the chrome is up, so those tests ask for it.
+    withControls ? uiOf(tester).showControls() : uiOf(tester).hideControls();
     engine.calls.clear();
     await tester.pump();
   }
@@ -121,7 +125,7 @@ void main() {
   });
 
   testWidgets('dragging up on the right raises the volume', (tester) async {
-    await ready(tester);
+    await ready(tester, withControls: true);
     expect(controller.volume, 1.0);
     await controller.setVolume(0.5);
     engine.calls.clear();
@@ -136,7 +140,7 @@ void main() {
   });
 
   testWidgets('dragging down on the right lowers the volume', (tester) async {
-    await ready(tester);
+    await ready(tester, withControls: true);
     await controller.setVolume(0.8);
 
     await tester.dragFrom(const Offset(700, 150), const Offset(0, 112));
@@ -147,7 +151,7 @@ void main() {
   });
 
   testWidgets('dragging up on the left raises the brightness', (tester) async {
-    await ready(tester);
+    await ready(tester, withControls: true);
     engine.windowBrightness = 0.4;
 
     await tester.dragFrom(const Offset(100, 300), const Offset(0, -112));
@@ -165,6 +169,7 @@ void main() {
       config: const FUiConfig(
         gestures: FGestureConfig(verticalDragAdjustsBrightness: false),
       ),
+      withControls: true,
     );
 
     await tester.dragFrom(const Offset(100, 300), const Offset(0, -112));
@@ -175,7 +180,7 @@ void main() {
   });
 
   testWidgets('volume and brightness stay on their own halves', (tester) async {
-    await ready(tester);
+    await ready(tester, withControls: true);
     await controller.setVolume(0.5);
     engine.calls.clear();
 
@@ -189,9 +194,10 @@ void main() {
   });
 
   testWidgets('dragging sideways scrubs and commits on release', (tester) async {
-    await ready(tester);
+    await ready(tester, withControls: true);
 
-    final gesture = await tester.startGesture(const Offset(400, 225));
+    // Above the transport row, which sits in the middle while the chrome is up.
+    final gesture = await tester.startGesture(const Offset(200, 130));
     await gesture.moveBy(const Offset(200, 0));
     await tester.pump();
 
@@ -205,6 +211,65 @@ void main() {
 
     expect(uiOf(tester).isScrubbing, isFalse);
     expect(engine.calls.where((c) => c.startsWith('seekTo')).length, 1);
+    await settlePlayer(tester);
+  });
+
+  testWidgets('a drag over the bare picture only brings the controls back', (tester) async {
+    await ready(tester);
+    await controller.setVolume(0.5);
+    engine.calls.clear();
+
+    // A tap that wobbles — or a deliberate swipe — over a picture with nothing on it is a request
+    // for the controls. It used to change the volume, the brightness or the position instead.
+    await tester.dragFrom(const Offset(700, 300), const Offset(0, -112));
+    await tester.dragFrom(const Offset(100, 300), const Offset(0, -112));
+    await tester.dragFrom(const Offset(200, 130), const Offset(200, 0));
+    await tester.pump(kDoubleTapTimeout);
+
+    expect(controller.volume, 0.5);
+    expect(engine.calls.where((c) => c.startsWith('setBrightness')), isEmpty);
+    expect(uiOf(tester).isScrubbing, isFalse);
+    expect(engine.calls.where((c) => c.startsWith('seekTo')), isEmpty);
+    await settlePlayer(tester);
+  });
+
+  testWidgets('a wobble under the drag threshold is not a drag', (tester) async {
+    await ready(tester, withControls: true);
+    await controller.setVolume(0.5);
+
+    await tester.dragFrom(const Offset(700, 300), const Offset(0, -16));
+    await tester.pump();
+
+    expect(controller.volume, 0.5);
+    await settlePlayer(tester);
+  });
+
+  testWidgets('leaving the player hands the brightness back to the device', (tester) async {
+    await ready(tester, withControls: true);
+    engine.windowBrightness = 0.4;
+
+    await tester.dragFrom(const Offset(100, 300), const Offset(0, -112));
+    await tester.pump();
+    expect(engine.windowBrightness, greaterThan(0.4));
+
+    await tester.pumpWidget(const SizedBox());
+    expect(engine.calls.last, 'setBrightness:null');
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('holding shows the speed as a chip at the top', (tester) async {
+    await ready(tester);
+
+    final gesture = await tester.startGesture(const Offset(400, 225));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+
+    expect(find.text('2×'), findsOneWidget);
+    expect(tester.getCenter(find.text('2×')).dy, lessThan(100));
+
+    await gesture.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('2×'), findsNothing);
     await settlePlayer(tester);
   });
 

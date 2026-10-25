@@ -144,7 +144,10 @@ class FDesktopBottomBar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (config.showSeekBar) ...[
-              FProgressBar(ui: ui, previewBuilder: previewBuilder),
+              FPositionBuilder(
+                ui: ui,
+                builder: (context) => FProgressBar(ui: ui, previewBuilder: previewBuilder),
+              ),
               SizedBox(height: theme.spacing / 2),
             ],
             Row(
@@ -207,7 +210,7 @@ class FDesktopBottomBar extends StatelessWidget {
                   if (!isNarrow) FVolumeSlider(ui: ui),
                 ],
                 SizedBox(width: theme.spacing * 1.5),
-                _Time(ui: ui),
+                FPositionBuilder(ui: ui, builder: (context) => _Time(ui: ui)),
                 // The pickers scroll rather than overflow, as on the touch bar: a named control,
                 // a quality summary and a speed are wider than a narrow player, and a row that
                 // runs off the edge takes the fullscreen button with it.

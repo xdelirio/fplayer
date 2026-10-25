@@ -9,7 +9,7 @@ import '../time_format.dart';
 import '../video_fit.dart';
 
 /// Transient thing to show in the middle of the picture after a gesture.
-enum _FeedbackKind { volume, brightness, speed }
+enum _FeedbackKind { volume, brightness }
 
 /// Touch handling over the video surface.
 ///
@@ -26,14 +26,24 @@ class FGestureLayer extends StatefulWidget {
 }
 
 class _FGestureLayerState extends State<FGestureLayer> {
-  static const _axisThreshold = 12.0;
+  /// How far a finger travels before it counts as a drag. Well past the platform's touch slop:
+  /// a tap that wobbled a few pixels used to change the brightness or the volume.
+  static const _axisThreshold = 24.0;
 
   _DragAxis _axis = _DragAxis.undecided;
+  bool _isDragAllowed = false;
   Offset _dragTotal = Offset.zero;
   Duration _seekOrigin = Duration.zero;
   double _volumeOrigin = 1;
   double _brightnessOrigin = 0.5;
+
+  /// Whether a drag on this layer overrode the screen brightness.
+  bool _hasChangedBrightness = false;
+
   double? _speedBeforeHold;
+
+  /// The speed a hold is playing at, while one is.
+  double? _heldSpeed;
 
   _FeedbackKind? _feedback;
   String _feedbackText = '';
@@ -68,12 +78,23 @@ class _FGestureLayerState extends State<FGestureLayer> {
       _speedBeforeHold = null;
       unawaited(_ui.controller.setSpeed(held));
     }
+    // The brightness a viewer dragged to is for watching this video. Leaving the player hands the
+    // screen back to whatever the device was set to, rather than keeping the rest of the app
+    // dimmed or glaring.
+    if (_hasChangedBrightness) unawaited(_ui.controller.setBrightness(null));
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final gestures = _ui.config.gestures;
+    // Drags and pinches only while the chrome is up. Over a bare picture the next touch is
+    // nearly always a tap meant to bring the controls back, and a few pixels of travel turned
+    // it into a brightness, volume or seek change instead.
+    //
+    // Kept while a drag is under way, though: the chrome can time out mid-swipe, and taking the
+    // recogniser away then would drop the end of the gesture and leave its badge on screen.
+    final canDrag = (_ui.areControlsVisible && !_ui.isLocked) || _axis != _DragAxis.undecided;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -92,9 +113,9 @@ class _FGestureLayerState extends State<FGestureLayer> {
           onLongPressStart: gestures.longPressSpeed == null ? null : _onHoldStart,
           onLongPressEnd: gestures.longPressSpeed == null ? null : (_) => _onHoldEnd(),
           onLongPressCancel: gestures.longPressSpeed == null ? null : _onHoldEnd,
-          onScaleStart: (details) => _onScaleStart(details, constraints),
-          onScaleUpdate: (details) => _onScaleUpdate(details, constraints),
-          onScaleEnd: (_) => _onScaleEnd(),
+          onScaleStart: canDrag ? (details) => _onScaleStart(details, constraints) : null,
+          onScaleUpdate: canDrag ? (details) => _onScaleUpdate(details, constraints) : null,
+          onScaleEnd: canDrag ? (_) => _onScaleEnd() : null,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -104,6 +125,7 @@ class _FGestureLayerState extends State<FGestureLayer> {
                 text: _feedbackText,
                 value: _feedbackValue,
               ),
+              _SpeedChip(ui: _ui, speed: _heldSpeed),
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 220),
                 child: _isSeekingForward == null
@@ -189,7 +211,9 @@ class _FGestureLayerState extends State<FGestureLayer> {
 
     _speedBeforeHold = _ui.controller.speed;
     _ui.controller.setSpeed(target);
-    _showFeedback(_FeedbackKind.speed, text: formatPlaybackSpeed(target), sticky: true);
+    // The chip sits where the title bar would be; a hold is about the picture, not the chrome.
+    _ui.hideControls();
+    setState(() => _heldSpeed = target);
   }
 
   void _onHoldEnd() {
@@ -198,7 +222,7 @@ class _FGestureLayerState extends State<FGestureLayer> {
 
     _speedBeforeHold = null;
     _ui.controller.setSpeed(previous);
-    _hideFeedback();
+    if (mounted) setState(() => _heldSpeed = null);
   }
 
   // endregion
@@ -206,6 +230,8 @@ class _FGestureLayerState extends State<FGestureLayer> {
   // region Pan and pinch
 
   void _onScaleStart(ScaleStartDetails details, BoxConstraints constraints) {
+    // Decided once, at touch-down: the recogniser can outlive the chrome by one gesture.
+    _isDragAllowed = _ui.areControlsVisible;
     _axis = _DragAxis.undecided;
     _dragTotal = Offset.zero;
     _seekOrigin = _ui.controller.position;
@@ -226,7 +252,7 @@ class _FGestureLayerState extends State<FGestureLayer> {
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details, BoxConstraints constraints) {
-    if (_ui.isLocked) return;
+    if (_ui.isLocked || !_isDragAllowed) return;
 
     if (details.pointerCount > 1) {
       if (_ui.config.gestures.pinchChangesFit) _onPinch(details.scale);
@@ -341,6 +367,7 @@ class _FGestureLayerState extends State<FGestureLayer> {
     }
 
     final target = (_brightnessOrigin + change).clamp(0.0, 1.0);
+    _hasChangedBrightness = true;
     unawaited(_ui.controller.setBrightness(target));
     _showFeedback(
       _FeedbackKind.brightness,
@@ -454,8 +481,68 @@ class _Feedback extends StatelessWidget {
   static IconData _iconFor(_FeedbackKind kind) => switch (kind) {
         _FeedbackKind.volume => Icons.volume_up,
         _FeedbackKind.brightness => Icons.brightness_6,
-        _FeedbackKind.speed => Icons.speed,
       };
+}
+
+/// The hold-to-speed-up indicator: a small translucent pill at the top of the picture.
+///
+/// Out of the middle on purpose. Holding is something people do *while watching*, and a badge
+/// over the centre of the frame covered exactly what they sped up to see.
+class _SpeedChip extends StatelessWidget {
+  const _SpeedChip({required this.ui, required this.speed});
+
+  final FPlayerUi ui;
+
+  /// Null while no hold is in progress.
+  final double? speed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ui.theme;
+    final speed = this.speed;
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 150),
+      child: speed == null
+          ? const SizedBox.shrink()
+          : Align(
+              key: const ValueKey('fplayer.speed-chip'),
+              alignment: Alignment.topCenter,
+              child: SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.only(top: theme.spacing * 2),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0x73000000),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: theme.spacing * 1.5,
+                        vertical: theme.spacing * 0.75,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            formatPlaybackSpeed(speed),
+                            style: theme.labelStyle.copyWith(color: theme.foreground),
+                          ),
+                          SizedBox(width: theme.spacing / 2),
+                          Icon(
+                            Icons.fast_forward,
+                            size: theme.iconSize * 0.75,
+                            color: theme.foreground,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
 }
 
 /// The half-screen wash that answers a double tap.

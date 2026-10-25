@@ -302,19 +302,22 @@ class _BottomBar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (config.showSeekBar) ...[
-              Row(
-                children: [
-                  Text(
-                    formatMediaTime(ui.displayPosition, reference: value.duration),
-                    style: theme.timestampStyle.copyWith(color: theme.foreground),
-                  ),
-                  SizedBox(width: theme.spacing),
-                  Expanded(
-                    child: FProgressBar(ui: ui, previewBuilder: previewBuilder),
-                  ),
-                  SizedBox(width: theme.spacing),
-                  FTrailingTime(ui: ui),
-                ],
+              FPositionBuilder(
+                ui: ui,
+                builder: (context) => Row(
+                  children: [
+                    Text(
+                      formatMediaTime(ui.displayPosition, reference: value.duration),
+                      style: theme.timestampStyle.copyWith(color: theme.foreground),
+                    ),
+                    SizedBox(width: theme.spacing),
+                    Expanded(
+                      child: FProgressBar(ui: ui, previewBuilder: previewBuilder),
+                    ),
+                    SizedBox(width: theme.spacing),
+                    FTrailingTime(ui: ui),
+                  ],
+                ),
               ),
               SizedBox(height: theme.spacing / 2),
             ],

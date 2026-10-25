@@ -461,7 +461,7 @@ internal class PlayerHost(
             }
 
             "setBrightness" -> {
-                window.setBrightness(call.argument<Number>("brightness")?.toDouble())
+                window.setBrightness(playerId, call.argument<Number>("brightness")?.toDouble())
                 result.success(null)
             }
 
@@ -578,8 +578,10 @@ internal class PlayerHost(
 
     override fun onVideoSizeChanged(videoSize: VideoSize) {
         resizeSurface(videoSize.width, videoSize.height)
-        // The first frame is what makes PiP viable: the window needs a shape.
+        // The first frame is what makes PiP viable: the window needs a shape. Playback can start
+        // before it lands, so auto-enter is re-armed here too.
         emitPipState()
+        pip.refreshActions(this, pipActions)
         val (width, height) = displaySize(videoSize)
         emit(
             "videoSize",

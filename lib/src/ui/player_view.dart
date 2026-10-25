@@ -10,6 +10,7 @@ import '../config/tv_config.dart';
 import '../config/ui_config.dart';
 import '../core/player_controller.dart';
 import '../core/player_status.dart';
+import '../core/player_value.dart';
 import '../models/player_error.dart';
 import '../models/player_source.dart';
 import '../storyboard/storyboard_controller.dart';
@@ -142,6 +143,13 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   FPlayerPanel? _panel;
   bool _isScrubbing = false;
   Duration _scrubPosition = Duration.zero;
+
+  /// What [positionListenable] hands out: one instance for the life of the view, so a listener
+  /// survives a new controller.
+  final _PositionTicks _positionTicks = _PositionTicks();
+
+  /// The value the stack was last built from, to tell a progress tick from a real change.
+  FPlayerValue? _builtFrom;
   late FVideoFit _fit = widget.config.fit;
 
   late final FStoryboardController _storyboard =
@@ -197,6 +205,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   void dispose() {
     _hideTimer?.cancel();
     widget.controller.removeListener(_onPlaybackChanged);
+    _positionTicks.dispose();
     if (_ownsStoryboard) _storyboard.dispose();
     super.dispose();
   }
@@ -238,6 +247,9 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   @override
   Duration get displayPosition =>
       _isScrubbing ? _scrubPosition : widget.controller.value.position;
+
+  @override
+  Listenable get positionListenable => _positionTicks;
 
   @override
   FVideoFit get fit => _fit;
@@ -341,7 +353,11 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   }
 
   @override
-  void updateScrub(Duration position) => setState(() => _scrubPosition = position);
+  void updateScrub(Duration position) {
+    // Sixty updates a second under a finger: only what shows the position follows them.
+    _scrubPosition = position;
+    _positionTicks.tick();
+  }
 
   @override
   void cancelScrub() {
@@ -500,7 +516,25 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
       unawaited(toggleFullscreen());
     }
 
-    setState(() {});
+    _positionTicks.tick();
+    if (!_isProgressOnly(value)) setState(() {});
+  }
+
+  /// Whether [value] differs from what the stack was built from only in where the playhead is.
+  ///
+  /// The engine reports progress four times a second, and rebuilding everything on each of those
+  /// rebuilt the surface, the gesture layer and the whole chrome to move a seek bar. What shows
+  /// the position follows [positionListenable] instead; subtitles follow the controller.
+  bool _isProgressOnly(FPlayerValue value) {
+    final built = _builtFrom;
+    if (built == null) return false;
+    return value.copyWith(
+          position: built.position,
+          buffered: built.buffered,
+          bufferedAhead: built.bufferedAhead,
+          cues: built.cues,
+        ) ==
+        built;
   }
 
   /// What "leave fullscreen when the media ends" means for this view.
@@ -615,6 +649,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
 
   Widget _buildStack(BuildContext context) {
     final value = widget.controller.value;
+    _builtFrom = value;
 
     // In Picture-in-Picture the system shows the whole Activity in a thumbnail. Anything but the
     // picture is unreadable at that size and steals room from it.
@@ -624,7 +659,10 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
         fit: FVideoFit.contain,
         backgroundColor: widget.backgroundColor,
       );
-      if (!_isDesktop) return surface;
+      // Made to fill: the fullscreen route centres the view, and under those loose constraints
+      // the surface's `FittedBox` kept its one-pixel-tall child's size — a black window with a
+      // dot of video in the middle.
+      if (!_isDesktop) return SizedBox.expand(child: surface);
       // A desktop's floating window has no system chrome to bring the player back with, so the
       // pointer keeps its say: click pauses, double-click leaves.
       return Stack(
@@ -710,11 +748,26 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
               child: AnimatedOpacity(
                 opacity: _areControlsVisible || value.hasError ? 0 : 1,
                 duration: const Duration(milliseconds: 180),
-                child: _IdleProgress(key: const Key('fplayer.idle-progress'), ui: this),
+                child: FPositionBuilder(
+                  key: const Key('fplayer.idle-progress'),
+                  ui: this,
+                  whileHidden: true,
+                  builder: (context) => _IdleProgress(ui: this),
+                ),
               ),
             ),
-          if (!_isLocked) FSkipMarker(ui: this),
-          if (!_isLocked) FNextUpCard(ui: this),
+          if (!_isLocked) ...[
+            FPositionBuilder(
+              ui: this,
+              whileHidden: true,
+              builder: (context) => FSkipMarker(ui: this),
+            ),
+            FPositionBuilder(
+              ui: this,
+              whileHidden: true,
+              builder: (context) => FNextUpCard(ui: this),
+            ),
+          ],
           if (_isLocked) _LockedAffordance(ui: this),
           // Waiting for signal is not a "loading" status: the engine parks the failed load and
           // reports the player as simply not playing. Without this the viewer gets a play button
@@ -728,7 +781,12 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
             widget.errorBuilder?.call(context, this, value.error!) ??
                 FErrorView(ui: this, error: value.error!),
           if (_panel != null) FPanelFocusScope(child: _panelFor(_panel!)),
-          if (widget.overlayBuilder != null) widget.overlayBuilder!(context, this),
+          if (widget.overlayBuilder != null)
+            FPositionBuilder(
+              ui: this,
+              whileHidden: true,
+              builder: (context) => widget.overlayBuilder!(context, this),
+            ),
         ],
       ),
     );
@@ -788,9 +846,15 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
   /// The chrome for the input at hand. Both take the same bands from the same builders; only
   /// what fills in when a builder is not given differs.
   Widget _buildChrome(BuildContext context) {
-    final topBar = widget.topBarBuilder?.call(context, this);
-    final bottomBar = widget.bottomBarBuilder?.call(context, this);
-    final center = widget.centerBuilder?.call(context, this);
+    // The app's own bands may show the position, and the view no longer rebuilds them on every
+    // tick for free.
+    Widget? band(Widget Function(BuildContext, FPlayerUi)? builder) => builder == null
+        ? null
+        : FPositionBuilder(ui: this, builder: (context) => builder(context, this));
+
+    final topBar = band(widget.topBarBuilder);
+    final bottomBar = band(widget.bottomBarBuilder);
+    final center = band(widget.centerBuilder);
 
     if (_isDesktop) {
       return FDesktopControls(
@@ -830,7 +894,7 @@ class _FPlayerViewState extends State<FPlayerView> implements FPlayerUi {
 /// Deliberately not interactive: it is thinner than any usable target, and the seek bar it hints
 /// at is one tap away.
 class _IdleProgress extends StatelessWidget {
-  const _IdleProgress({required this.ui, super.key});
+  const _IdleProgress({required this.ui});
 
   final FPlayerUi ui;
 
@@ -980,4 +1044,9 @@ class _SpinnerPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SpinnerPainter old) => old.progress != progress || old.color != color;
+}
+
+/// A notifier the view can fire by hand, for progress ticks and scrub updates alike.
+class _PositionTicks extends ChangeNotifier {
+  void tick() => notifyListeners();
 }

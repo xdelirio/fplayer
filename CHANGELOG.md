@@ -36,8 +36,36 @@
   auto-hide countdown on every one of the hundred events a second a trackpad
   reports, and now does so at most ten times a second. Hidden chrome still
   comes back on the first move, with no wait.
+- **Progress ticks no longer rebuild the view.** With the controls on screen,
+  each of the four progress events a second rebuilt the surface, the gesture
+  layer and the whole chrome. The view now rebuilds only when something other
+  than the position changes. The seek bar, the time readouts, the idle progress
+  line, the skip marker and the next-up card follow the position on their own
+  through the new `FPositionBuilder` and `FPlayerUi.positionListenable`, and
+  so do the app's own `topBarBuilder`, `bottomBarBuilder`, `centerBuilder` and
+  `overlayBuilder`. Scrubbing updates only those readouts too.
+- **Drag gestures need the controls on screen.** Brightness, volume, seeking
+  by sliding and pinch now work only while the chrome is visible; over a bare
+  picture, a touch brings the controls back. A drag also has to travel 24 px
+  instead of 12 before it counts, so a tap that wobbles is still a tap.
+  Double tap and hold-to-speed-up are unchanged.
+- **The hold-to-speed-up badge is a small chip at the top.** A translucent
+  `2× ⏩` pill replaces the box in the middle of the picture, and the controls
+  step aside while the hold lasts.
 
 ### Fixed
+
+- **Brightness goes back to the device's when the player closes.** The value
+  dragged to is applied to the Activity's window, and nothing cleared it, so
+  the rest of the app kept it after the video closed. Closing the player view
+  that changed it, or disposing its controller, now hands the screen back to
+  the system setting.
+- **Picture-in-Picture from fullscreen shows the video.** The window was black
+  with a dot of video in the middle: the fullscreen route centres the view, and
+  the surface kept its one-pixel layout size under those loose constraints.
+- **Home no longer shrinks a player with nothing to show into PiP.** Auto-enter
+  was armed whether or not anything played, so a source that failed to load
+  left a black PiP window. It is now armed only while playing with a picture.
 
 - **mpv engine on Linux: a black picture.** media_kit_video's Linux texture
   reports its real size only from inside Flutter's request for a frame, and
