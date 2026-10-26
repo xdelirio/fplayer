@@ -154,6 +154,39 @@ void main() {
     expect(controller.position, const Duration(minutes: 5, seconds: 1));
   });
 
+  test('a short seek is not undone by the tick from before it', () async {
+    final engine = FakeEngine();
+    final controller = controllerWith(engine);
+    addTearDown(controller.dispose);
+
+    await controller.open(source);
+    engine.becomeReady(duration: const Duration(minutes: 10));
+    await settle();
+    // A click just ahead of the playhead: the target is within the settle window of where the
+    // playhead was, and so is the stale tick.
+    await controller.seekTo(const Duration(milliseconds: 1500));
+
+    engine.emit(
+      const FEngineProgress(
+        position: Duration(milliseconds: 100),
+        buffered: Duration(seconds: 30),
+        bufferedAhead: Duration(seconds: 29),
+      ),
+    );
+    await settle();
+    expect(controller.position, const Duration(milliseconds: 1500));
+
+    engine.emit(
+      const FEngineProgress(
+        position: Duration(milliseconds: 1600),
+        buffered: Duration(seconds: 30),
+        bufferedAhead: Duration(seconds: 28),
+      ),
+    );
+    await settle();
+    expect(controller.position, const Duration(milliseconds: 1600));
+  });
+
   test('the playhead is not held hostage by a seek the engine ignored', () async {
     final engine = FakeEngine();
     final controller = controllerWith(engine);
@@ -164,7 +197,8 @@ void main() {
     await settle();
     await controller.seekTo(const Duration(minutes: 5));
 
-    for (var i = 0; i < 20; i++) {
+    // Past the eight seconds' worth of ticks a slow seek is given to land.
+    for (var i = 0; i < 40; i++) {
       engine.emit(
         FEngineProgress(
           position: Duration(seconds: i),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show PlatformException;
@@ -59,18 +60,28 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
   /// Where a seek asked the engine to go, until a progress tick arrives from around there.
   Duration? _pendingSeek;
 
+  /// Where the playhead was when that seek was asked for.
+  Duration _seekOrigin = Duration.zero;
+
   /// Ticks ignored so far while waiting for that seek to land.
   int _staleProgressTicks = 0;
 
   /// How far a progress tick may sit from the seek target and still count as having landed.
   static const _seekSettleWindow = Duration(seconds: 2);
 
-  /// How many ticks to wait before believing the engine over the seek that was asked for.
+  /// How long to wait, in ticks, before believing the engine over the seek that was asked for.
   ///
   /// A seek the engine silently refuses must not freeze the position readout for the session;
   /// counting ticks rather than running a timer keeps that bound tied to the thing being
-  /// guarded against, and leaves nothing pending when playback is idle.
-  static const _maxStaleProgressTicks = 12;
+  /// guarded against, and leaves nothing pending when playback is idle. Eight seconds' worth:
+  /// mpv's precise seek on a stream with sparse keyframes takes seconds to land on Windows,
+  /// and giving up after three put the playhead back where the viewer had just left.
+  int get _maxStaleProgressTicks => math.max(
+    12,
+    _maxSeekWait.inMilliseconds ~/ math.max(1, config.playback.progressInterval.inMilliseconds),
+  );
+
+  static const _maxSeekWait = Duration(seconds: 8);
 
   FPlayerValue _value = const FPlayerValue.idle();
   bool _isCreated = false;
@@ -376,6 +387,7 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     // Held until the engine's own progress catches up, so a tick that was already in flight
     // cannot drag the playhead back to where the viewer just left.
     _pendingSeek = clamped;
+    _seekOrigin = from;
     _staleProgressTicks = 0;
 
     // Both UI call sites fire this and walk away, so a platform failure here has no call site to
@@ -663,8 +675,12 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
         // A progress tick sent before the engine acted on a seek still carries the old position.
         // Applied verbatim it drags the playhead back to where the viewer just left, and the
         // scrubber rubber-bands for a tick or two. The buffered ranges are current either way.
+        //
+        // Nearness alone is not landing: a seek shorter than the settle window starts out within
+        // it, and the tick from before it was taken as the arrival and put the playhead back.
+        // It has landed once it is near the target and nearer the target than where it left.
         final isStale = _pendingSeek != null &&
-            (signal.position - _pendingSeek!).abs() > _seekSettleWindow &&
+            !_hasSeekLanded(signal.position, _pendingSeek!) &&
             _staleProgressTicks < _maxStaleProgressTicks;
         if (isStale) {
           _staleProgressTicks++;
@@ -886,6 +902,11 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   void _emit(FPlayerEvent event) {
     if (!_events.isClosed) _events.add(event);
+  }
+
+  bool _hasSeekLanded(Duration position, Duration target) {
+    final fromTarget = (position - target).abs();
+    return fromTarget <= _seekSettleWindow && fromTarget <= (position - _seekOrigin).abs();
   }
 
   void _cancelTimers() {

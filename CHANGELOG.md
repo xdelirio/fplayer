@@ -66,6 +66,16 @@
 - **Home no longer shrinks a player with nothing to show into PiP.** Auto-enter
   was armed whether or not anything played, so a source that failed to load
   left a black PiP window. It is now armed only while playing with a picture.
+- **A short seek on the desktops no longer snaps back.** A seek of two seconds
+  or less started out within the window counted as having landed, so the tick
+  from before it put the playhead back. While paused, the mpv engine now
+  reports where the seek landed, and a slow seek is given eight seconds to land
+  instead of three.
+- **The floating desktop window always gives the app back.** Leaving the
+  player from Picture-in-Picture restores the window, maximizing it from the
+  title bar leaves PiP, a maximized window comes back maximized, and a window
+  call that fails no longer leaves the player stuck in PiP. A new mpv player
+  waits for the previous one to finish tearing down.
 
 - **mpv engine on Linux: a black picture.** media_kit_video's Linux texture
   reports its real size only from inside Flutter's request for a frame, and

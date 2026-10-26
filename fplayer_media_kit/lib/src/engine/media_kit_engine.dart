@@ -8,7 +8,7 @@ import 'package:flutter/painting.dart' show Alignment;
 import 'package:fplayer/fplayer.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
-import 'package:window_manager/window_manager.dart' show windowManager;
+import 'package:window_manager/window_manager.dart' show WindowListener, windowManager;
 
 import 'media_kit_tracks.dart';
 import 'mpv_error.dart';
@@ -90,6 +90,22 @@ class FMediaKitEngine implements FPlaybackEngine {
   /// Where the window was before Picture-in-Picture shrank it, so leaving puts it back.
   Rect? _windowBeforePip;
 
+  /// Whether the window was maximized before Picture-in-Picture, so leaving maximizes it again.
+  bool _wasMaximizedBeforePip = false;
+
+  /// True while the window is being floated or put back, so a second press does not interleave.
+  bool _isMovingWindow = false;
+
+  /// Hears the viewer maximizing the floating window from its own title bar.
+  late final _PipWindowListener _windowListener = _PipWindowListener(this);
+
+  /// The last engine's teardown, which the next one waits for before it creates a player.
+  ///
+  /// A page's `State.dispose` cannot await the controller, so the next page's player used to be
+  /// created while the last one was still unregistering its texture and freeing its render
+  /// context on the platform thread — on Windows, a crash opening the next video.
+  static Future<void> _previousTeardown = Future<void>.value();
+
   /// Whether this process owns a window that can be moved and made fullscreen.
   ///
   /// True on the three desktops. iOS plays through this engine too, and has neither.
@@ -119,18 +135,32 @@ class FMediaKitEngine implements FPlaybackEngine {
     }
 
     mk.MediaKit.ensureInitialized();
+    // Bounded: a teardown stuck in the platform must not keep every later player from opening.
+    await _previousTeardown.timeout(_teardownWait, onTimeout: () {});
+    // Disposed while waiting: a player created now would have no one left to free it.
+    if (_isDisposed) return;
 
     try {
       await _create(config);
     } catch (_) {
       // Half a player is worse than none: the controller's retry calls [create] again, and
-      // with `_player` set that would be refused for good.
+      // with `_player` set that would be refused for good. Its subscriptions and listeners go
+      // with it, or each retry would pile another set onto a dead player.
+      if (_hasWindow) windowManager.removeListener(_windowListener);
+      for (final subscription in _subscriptions) {
+        await subscription.cancel();
+      }
+      _subscriptions.clear();
+      _video?.id.removeListener(_onTextureChanged);
+      _video?.rect.removeListener(_onTextureChanged);
       await _player?.dispose();
       _player = null;
       _video = null;
       rethrow;
     }
   }
+
+  static const _teardownWait = Duration(seconds: 5);
 
   Future<void> _create(FPlayerConfig config) async {
 
@@ -181,6 +211,7 @@ class FMediaKitEngine implements FPlaybackEngine {
       stream.videoParams.listen(_onVideoParams),
       stream.subtitle.listen(_onSubtitleText),
       stream.log.listen(_onLog),
+      stream.position.listen(_onPosition),
     ]);
 
     await player.setVolume(config.playback.volume * 100);
@@ -209,7 +240,10 @@ class FMediaKitEngine implements FPlaybackEngine {
     }
 
     // Binds the plugin to the main window; it refuses every other call until this has run.
-    if (_hasWindow) await windowManager.ensureInitialized();
+    if (_hasWindow) {
+      await windowManager.ensureInitialized();
+      windowManager.addListener(_windowListener);
+    }
   }
 
   @override
@@ -295,8 +329,9 @@ class FMediaKitEngine implements FPlaybackEngine {
   Future<void> seekTo(Duration position) async {
     final player = _player;
     if (player == null) return;
+    // No progress report here: mpv has taken the seek but not yet said where it is, and the
+    // position still read is the one from before it. [_onPosition] reports the landing.
     await player.seek(position.isNegative ? Duration.zero : position);
-    _emitProgress();
   }
 
   /// The live edge for a live stream, the start otherwise.
@@ -308,7 +343,6 @@ class FMediaKitEngine implements FPlaybackEngine {
     if (!_isLive) return seekTo(Duration.zero);
     if (_player == null || _isDisposed) return;
     await _native.command(['seek', '100', 'absolute-percent']);
-    _emitProgress();
   }
 
   @override
@@ -408,37 +442,89 @@ class FMediaKitEngine implements FPlaybackEngine {
   /// Shrinks the window to a corner of the screen and keeps it above the others.
   ///
   /// The size follows the picture's shape, at a width that reads as a thumbnail rather than a
-  /// second player. Fullscreen is left first: a window cannot be both.
+  /// second player. Not from fullscreen: a window cannot be both. A maximized window is
+  /// restored first, and maximized again on the way out.
   @override
   Future<bool> enterPip() async {
-    if (!_hasWindow || _windowBeforePip != null) return false;
-    // Leaving fullscreen is animated and reported before it is done; the bounds read during it
-    // are the screen's, and that is what exitPip would restore. Not from fullscreen, then.
-    if (await windowManager.isFullScreen()) return false;
+    if (!_hasWindow || _windowBeforePip != null || _isMovingWindow) return false;
+    _isMovingWindow = true;
+    Rect? bounds;
+    try {
+      // Leaving fullscreen is animated and reported before it is done; the bounds read during
+      // it are the screen's, and that is what exitPip would restore. Not from fullscreen, then.
+      if (await windowManager.isFullScreen()) return false;
 
-    _windowBeforePip = await windowManager.getBounds();
+      // A maximized window's bounds are the work area's. Put back as plain bounds, Windows
+      // still considers the window maximized at that size and the next maximize does nothing.
+      final wasMaximized = await windowManager.isMaximized();
+      if (wasMaximized) await windowManager.unmaximize();
+      bounds = await windowManager.getBounds();
 
-    final aspect = _size.isEmpty ? 16 / 9 : _size.width * _pixelAspectRatio / _size.height;
-    const width = 400.0;
-    await windowManager.setAlwaysOnTop(true);
-    await windowManager.setSize(Size(width, width / aspect));
-    await windowManager.setAlignment(Alignment.bottomRight);
+      final aspect = _size.isEmpty ? 16 / 9 : _size.width * _pixelAspectRatio / _size.height;
+      const width = 400.0;
+      await windowManager.setAlwaysOnTop(true);
+      await windowManager.setSize(Size(width, width / aspect));
+      await windowManager.setAlignment(Alignment.bottomRight);
+
+      _windowBeforePip = bounds;
+      _wasMaximizedBeforePip = wasMaximized;
+    } on Object catch (error) {
+      // Half a floating window — on top, or shrunk, but not in PiP — has no way back for the
+      // viewer: the controls only offer to leave PiP once it is reported active.
+      debugPrint('fplayer: could not float the window: $error');
+      if (bounds != null) await _restoreWindow(bounds, maximize: false);
+      return false;
+    } finally {
+      _isMovingWindow = false;
+    }
 
     _emit(const FEnginePipChanged(isActive: true, isSupported: true));
     return true;
   }
 
+  /// Puts the window back where it was.
+  ///
+  /// Reported left even when the window would not move: the alternative is a player stuck
+  /// showing nothing but the picture, with no control to try again from.
   @override
   Future<void> exitPip() async {
     final bounds = _windowBeforePip;
-    if (bounds == null) return;
-
-    await windowManager.setAlwaysOnTop(false);
-    await windowManager.setBounds(bounds);
-    await windowManager.focus();
+    if (bounds == null || _isMovingWindow) return;
+    _isMovingWindow = true;
     _windowBeforePip = null;
-
+    try {
+      await _restoreWindow(bounds, maximize: _wasMaximizedBeforePip);
+      await _tryWindow('focus', windowManager.focus);
+    } finally {
+      _isMovingWindow = false;
+    }
     _emit(const FEnginePipChanged(isActive: false, isSupported: true));
+  }
+
+  /// The viewer maximized or fullscreened the floating window from its own chrome.
+  ///
+  /// That is leaving PiP, at the size they chose rather than the one PiP saved: the window stops
+  /// floating, and the player shows its controls again.
+  Future<void> _onWindowTookOver() async {
+    if (_windowBeforePip == null || _isMovingWindow || _isDisposed) return;
+    _windowBeforePip = null;
+    await _tryWindow('drop always-on-top', () => windowManager.setAlwaysOnTop(false));
+    _emit(const FEnginePipChanged(isActive: false, isSupported: true));
+  }
+
+  /// Each step on its own, so one the platform refuses does not keep the others from running.
+  Future<void> _restoreWindow(Rect bounds, {required bool maximize}) async {
+    await _tryWindow('drop always-on-top', () => windowManager.setAlwaysOnTop(false));
+    await _tryWindow('restore bounds', () => windowManager.setBounds(bounds));
+    if (maximize) await _tryWindow('maximize', windowManager.maximize);
+  }
+
+  Future<void> _tryWindow(String what, Future<void> Function() call) async {
+    try {
+      await call();
+    } on Object catch (error) {
+      debugPrint('fplayer: could not $what: $error');
+    }
   }
 
   @override
@@ -484,8 +570,21 @@ class FMediaKitEngine implements FPlaybackEngine {
   Future<void> dispose() async {
     if (_isDisposed) return;
     _isDisposed = true;
+    final teardown = _tearDown();
+    _previousTeardown = teardown.then((_) {}, onError: (Object _) {});
+    await teardown;
+  }
 
+  Future<void> _tearDown() async {
     _stopTicker();
+    if (_hasWindow) windowManager.removeListener(_windowListener);
+    // Leaving the page from the floating window must not leave the app a thumbnail on top of
+    // everything, with the bounds to put it back gone along with this engine.
+    final bounds = _windowBeforePip;
+    if (bounds != null) {
+      _windowBeforePip = null;
+      await _restoreWindow(bounds, maximize: _wasMaximizedBeforePip);
+    }
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
@@ -674,6 +773,14 @@ class FMediaKitEngine implements FPlaybackEngine {
   static const double _swMaxWidth = 1920;
   static const double _swMaxHeight = 1080;
 
+  /// Reports where a seek landed while paused, when no ticker runs to say so.
+  ///
+  /// While playing the ticker reports positions anyway, and mpv's own several-per-second
+  /// updates are left out.
+  void _onPosition(Duration position) {
+    if (_ticker == null) _emitProgress();
+  }
+
   void _onPlayingChanged(bool isPlaying) {
     _emit(FEnginePlayingChanged(isPlaying: isPlaying));
     if (isPlaying) {
@@ -843,4 +950,16 @@ class FMediaKitEngine implements FPlaybackEngine {
     if (_hasFailed && signal is! FEngineFailed) return;
     _signals.add(signal);
   }
+}
+
+class _PipWindowListener with WindowListener {
+  _PipWindowListener(this._engine);
+
+  final FMediaKitEngine _engine;
+
+  @override
+  void onWindowMaximize() => unawaited(_engine._onWindowTookOver());
+
+  @override
+  void onWindowEnterFullScreen() => unawaited(_engine._onWindowTookOver());
 }
