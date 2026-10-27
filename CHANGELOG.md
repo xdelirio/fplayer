@@ -65,6 +65,20 @@
 
 ### Fixed
 
+- **The `HD` and `4K` tags agree with the rung they sit on.** The tag was
+  read off the raw height while the name allows for the width, so a wide
+  1280×536 film was `720p` with no tag beside a 16:9 `720p HD`, and a
+  3840×1600 one was `2160p HD`. Both now come from
+  `FVideoTrack.qualityRung`.
+- **DASH starts in a third of the time on the desktops.** FFmpeg opens every
+  representation one after another before the first frame — init segment and
+  first media segment, each over a new connection — and then exposes none of
+  the text ones. With seven subtitle sets on a CDN half a second away, that
+  was 25 s of a 27 s wait. `FMediaKitEngine` now fetches a static manifest
+  itself and hands mpv a local copy without the text adaptation sets, its
+  base made absolute: 10 s on the same stream. The subtitles are still added
+  from the manifest as before. Sources with headers keep the old path, since
+  FFmpeg sends none on segment requests for a manifest read from a file.
 - **Desktop tracks have their names, and DASH subtitles show up.** The FFmpeg
   in media_kit drops the `<Label>` of a DASH adaptation set and the `NAME` of
   an HLS rendition, so audio was listed as `es-419`; it also skips DASH text

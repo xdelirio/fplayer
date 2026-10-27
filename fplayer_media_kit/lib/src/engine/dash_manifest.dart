@@ -32,14 +32,9 @@ class DashManifest {
     ).allMatches(periodBody)) {
       final attributes = _attributes(set.group(1)!);
       final body = set.group(2)!;
-      final firstRepresentation = RegExp(r'<Representation\b([^>]*)>').firstMatch(body);
-      final representationAttributes = firstRepresentation == null
-          ? const <String, String>{}
-          : _attributes(firstRepresentation.group(1)!);
+      final representationAttributes = _firstRepresentationAttributes(body);
 
-      final contentType =
-          attributes['contentType'] ??
-          _typeOf(attributes['mimeType'] ?? representationAttributes['mimeType']);
+      final contentType = _contentTypeOf(attributes, representationAttributes);
       final language = attributes['lang'];
       final label = _text(_firstChild(body, 'Label'));
       final roles = RegExp(r'<Role\b([^>]*)/?>')
@@ -92,6 +87,45 @@ class DashManifest {
   }
 
   static const empty = DashManifest();
+
+  /// [xml] as mpv should read it from a local copy: without its text adaptation sets, and with
+  /// its base written out absolute. Null when the manifest must be read from where it is.
+  ///
+  /// FFmpeg opens every representation in turn before it plays anything, reading its init
+  /// segment and its first media segment, each over a new connection — and then exposes none of
+  /// the text ones. On a CDN half a second away, seven subtitle sets were fourteen requests and
+  /// most of the wait for the first frame. The subtitles still reach the menus: [parse] finds
+  /// them and the engine adds them itself. A copy also spares mpv its own two fetches of the
+  /// manifest, one to probe it and one to open it.
+  ///
+  /// The MPD-level `BaseURL` is written out absolute, which keeps every relative segment URL
+  /// pointing where it did. A `dynamic` manifest is left alone: FFmpeg reloads a live one from
+  /// its URL, and a copy would freeze it.
+  static String? localCopy(String xml, Uri manifestUri) {
+    final mpdTag = RegExp(r'<MPD\b[^>]*>').firstMatch(xml);
+    if (mpdTag == null || _attributes(mpdTag.group(0)!)['type'] == 'dynamic') return null;
+
+    final trimmed = xml.replaceAllMapped(
+      RegExp(r'<AdaptationSet\b([^>]*)>([\s\S]*?)</AdaptationSet>\s*'),
+      (set) {
+        final type = _contentTypeOf(
+          _attributes(set.group(1)!),
+          _firstRepresentationAttributes(set.group(2)!),
+        );
+        return type == 'text' ? '' : set.group(0)!;
+      },
+    );
+
+    final head = _beforeFirst(trimmed, '<Period');
+    final existing = RegExp(r'<BaseURL\b[^>]*>([\s\S]*?)</BaseURL>').firstMatch(head);
+    final base = existing == null
+        ? manifestUri.resolve('.')
+        : _resolveBase(manifestUri, existing.group(1));
+    final element = '<BaseURL>${_escape(base.toString())}</BaseURL>';
+    if (existing != null) return trimmed.replaceRange(existing.start, existing.end, element);
+    final open = RegExp(r'<MPD\b[^>]*>').firstMatch(trimmed)!;
+    return trimmed.replaceRange(open.end, open.end, element);
+  }
 
   /// Audio labels by language, in manifest order.
   final Map<String, List<String>> audioNames;
@@ -166,6 +200,19 @@ class DashManifest {
     return urls;
   }
 
+  /// `contentType` when the set says it, or what its MIME type implies.
+  static String? _contentTypeOf(
+    Map<String, String> setAttributes,
+    Map<String, String> representationAttributes,
+  ) =>
+      setAttributes['contentType'] ??
+      _typeOf(setAttributes['mimeType'] ?? representationAttributes['mimeType']);
+
+  static Map<String, String> _firstRepresentationAttributes(String setBody) {
+    final match = RegExp(r'<Representation\b([^>]*)>').firstMatch(setBody);
+    return match == null ? const {} : _attributes(match.group(1)!);
+  }
+
   static String? _typeOf(String? mimeType) => switch (mimeType?.split('/').first) {
     'audio' => 'audio',
     'video' => 'video',
@@ -212,6 +259,9 @@ class DashManifest {
       .replaceAll('&quot;', '"')
       .replaceAll('&apos;', "'")
       .replaceAll('&amp;', '&');
+
+  static String _escape(String value) =>
+      value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
   /// An ISO 8601 duration as DASH writes it: `PT7100.416504S`, `PT1H58M20.4S`, `P1DT2H`.
   static Duration? _duration(String? value) {

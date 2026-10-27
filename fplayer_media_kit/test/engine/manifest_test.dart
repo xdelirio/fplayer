@@ -99,6 +99,55 @@ void main() {
     });
   });
 
+  group('DashManifest.localCopy', () {
+    final uri = Uri.parse('https://cdn.example.com/title/play/manifest.mpd?token=x');
+
+    test('drops the text adaptation sets and keeps the rest', () {
+      final copy = DashManifest.localCopy(_mpd, uri)!;
+
+      expect(copy, isNot(contains('contentType="text"')));
+      expect(copy, isNot(contains('text/vtt')));
+      expect(copy, contains('contentType="video"'));
+      expect(RegExp('contentType="audio"').allMatches(copy), hasLength(2));
+      // Still the same signed segment URLs, escaped as they were.
+      expect(copy, contains('v/init.mp4?t=a&amp;b=1'));
+    });
+
+    test('points relative segments where the original did', () {
+      final copy = DashManifest.localCopy(_mpd, uri)!;
+
+      expect(
+        copy,
+        contains('type="static" mediaPresentationDuration="PT7100.4S">'
+            '<BaseURL>https://cdn.example.com/title/play/</BaseURL>'),
+      );
+    });
+
+    test('resolves a relative MPD BaseURL instead of adding a second one', () {
+      final copy = DashManifest.localCopy(
+        '<MPD type="static"><BaseURL>media/</BaseURL><Period></Period></MPD>',
+        uri,
+      )!;
+
+      expect(
+        copy,
+        '<MPD type="static"><BaseURL>https://cdn.example.com/title/play/media/</BaseURL>'
+        '<Period></Period></MPD>',
+      );
+    });
+
+    test('leaves a live manifest to be reloaded from its URL', () {
+      expect(
+        DashManifest.localCopy('<MPD type="dynamic"><Period></Period></MPD>', uri),
+        isNull,
+      );
+    });
+
+    test('leaves what is not a manifest alone', () {
+      expect(DashManifest.localCopy('<html></html>', uri), isNull);
+    });
+  });
+
   group('HlsRenditionNames', () {
     test('reads NAME by language, for audio and subtitles', () {
       final names = HlsRenditionNames.parse('''

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert' show jsonDecode, utf8;
-import 'dart:io' show HttpClient, HttpStatus, Platform;
+import 'dart:io' show Directory, File, HttpClient, HttpStatus, Platform;
 import 'dart:math' as math;
 import 'dart:typed_data' show BytesBuilder, Uint8List;
 import 'dart:ui' show Rect, Size;
@@ -303,9 +303,17 @@ class FMediaKitEngine implements FPlaybackEngine {
     }
     if (_isDisposed || generation != _sourceGeneration) return;
 
+    final manifest = await _prepareManifest(source);
+    if (_isDisposed || generation != _sourceGeneration) {
+      await _deleteManifestCopy(manifest?.copy);
+      return;
+    }
+    final previousCopy = _manifestCopy;
+    _manifestCopy = manifest?.copy;
+
     await player.open(
       mk.Media(
-        _mediaUriOf(source),
+        manifest?.copy?.path ?? _mediaUriOf(source),
         // An empty map rather than null: null leaves the last source's headers in force, and
         // an Authorization meant for one host must not reach the next.
         httpHeaders: source.headers,
@@ -313,6 +321,8 @@ class FMediaKitEngine implements FPlaybackEngine {
       ),
       play: _autoPlay,
     );
+    // Only once mpv has let go of it for the new file.
+    await _deleteManifestCopy(previousCopy);
     if (_isDisposed || generation != _sourceGeneration) return;
 
     // Only now does an error line belong to this load. media_kit stops the previous file on the
@@ -321,7 +331,7 @@ class FMediaKitEngine implements FPlaybackEngine {
     // after a failed item into a failed next item.
     _isOpening = true;
     _loadReason = null;
-    unawaited(_readManifest(source, generation));
+    unawaited(_readManifest(source, generation, prefetched: manifest?.text));
 
     for (final subtitle in source.subtitles) {
       if (_isDisposed || generation != _sourceGeneration) return;
@@ -625,6 +635,8 @@ class FMediaKitEngine implements FPlaybackEngine {
     await _player?.dispose();
     _player = null;
     await _signals.close();
+    await _deleteManifestCopy(_manifestCopy);
+    _manifestCopy = null;
   }
 
   // region Media
@@ -655,12 +667,57 @@ class FMediaKitEngine implements FPlaybackEngine {
     _selected.updateAll((_, _) => null);
   }
 
+  /// The DASH manifest of [source], fetched ahead of mpv so that mpv can be handed a copy without
+  /// its text adaptation sets — see [DashManifest.localCopy] for the wait that saves.
+  ///
+  /// Null, and mpv opens the URL itself, for anything else: not DASH, a fetch that failed (mpv's
+  /// own attempt reports why), a live manifest. And for a source with headers, because FFmpeg
+  /// only sends mpv's headers on segment requests when it read the manifest over HTTP: from a
+  /// file, an Authorization would reach none of the segments.
+  Future<({String text, File? copy})?> _prepareManifest(FPlayerSource source) async {
+    if (source.kind != FSourceKind.network || source.headers.isNotEmpty) return null;
+    final uri = Uri.tryParse(source.uri);
+    if (uri == null || !uri.path.toLowerCase().endsWith('.mpd')) return null;
+
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final bytes = await _fetch(client, uri, const {});
+      if (bytes == null) return null;
+      final text = utf8.decode(bytes, allowMalformed: true);
+      final copy = DashManifest.localCopy(text, uri);
+      if (copy == null) return (text: text, copy: null);
+
+      final directory = await Directory.systemTemp.createTemp('fplayer_');
+      final file = File('${directory.path}${Platform.pathSeparator}manifest.mpd');
+      await file.writeAsString(copy);
+      return (text: text, copy: file);
+    } on Object catch (e) {
+      debugPrint('fplayer: could not prepare the manifest, mpv reads it itself: $e');
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// The local manifest mpv is playing from, kept until the next load or the teardown.
+  File? _manifestCopy;
+
+  static Future<void> _deleteManifestCopy(File? file) async {
+    if (file == null) return;
+    try {
+      await file.parent.delete(recursive: true);
+    } on Object catch (_) {
+      // The system's temporary directory is cleaned in time anyway.
+    }
+  }
+
   /// Reads what FFmpeg leaves out of [source]'s manifest: the names of its tracks and, for DASH,
   /// its subtitles.
   ///
   /// Beside the load rather than in front of it: mpv fetches the same manifest on its own, and a
   /// slow or failing second fetch only costs the names and the subtitles, never the picture.
-  Future<void> _readManifest(FPlayerSource source, int generation) async {
+  /// [prefetched] is the manifest when [_prepareManifest] already has it.
+  Future<void> _readManifest(FPlayerSource source, int generation, {String? prefetched}) async {
     if (source.kind != FSourceKind.network) return;
     final uri = Uri.tryParse(source.uri);
     final path = uri?.path.toLowerCase() ?? '';
@@ -671,9 +728,9 @@ class FMediaKitEngine implements FPlaybackEngine {
 
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
-      final manifest = await _fetch(client, uri, source.headers);
-      if (manifest == null || isStale()) return;
-      final text = utf8.decode(manifest, allowMalformed: true);
+      final manifest = prefetched == null ? await _fetch(client, uri, source.headers) : null;
+      if ((prefetched == null && manifest == null) || isStale()) return;
+      final text = prefetched ?? utf8.decode(manifest!, allowMalformed: true);
 
       if (isHls) {
         final names = HlsRenditionNames.parse(text);
