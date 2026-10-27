@@ -217,6 +217,14 @@ class FFallbackEngine implements FPlaybackEngine {
   @override
   Future<double> brightness() async => await _active?.brightness() ?? 0.5;
 
+  // The same for the device volume: after a fallback nothing can reach it, and the gesture moves
+  // the player's own gain instead.
+  @override
+  Future<double?> deviceVolume() async => _active?.deviceVolume();
+
+  @override
+  Future<void> setDeviceVolume(double volume) async => _active?.setDeviceVolume(volume);
+
   @override
   Future<FEngineSnapshot> snapshot() async =>
       await _active?.snapshot() ??

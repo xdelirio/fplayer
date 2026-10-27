@@ -612,6 +612,25 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
     return _engine.brightness();
   }
 
+  /// The device's media volume, `0.0` to `1.0`, or null where the engine cannot reach it.
+  ///
+  /// Not [volume]: that is the player's own gain, which this leaves alone.
+  Future<double?> deviceVolume() async {
+    if (!_isCreated) return null;
+    return _engine.deviceVolume();
+  }
+
+  /// Sets the device's media volume, the way the hardware keys would.
+  ///
+  /// The volume gesture's target. A player muted at its own gain stays silent whatever the device
+  /// is at, so raising this from a mute unmutes the player too.
+  Future<void> setDeviceVolume(double volume) async {
+    if (!_isCreated) return;
+    final clamped = volume.clamp(0.0, 1.0);
+    if (clamped > 0 && _value.isMuted) await toggleMute();
+    await _engine.setDeviceVolume(clamped);
+  }
+
   /// Pulls fresh state from the engine.
   ///
   /// Progress events are pushed, but they stop while the app is backgrounded. Call this on resume

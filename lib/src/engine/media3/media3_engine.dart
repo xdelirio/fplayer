@@ -172,6 +172,17 @@ class FMedia3Engine implements FPlaybackEngine {
   }
 
   @override
+  Future<double?> deviceVolume() async {
+    final channel = _channel;
+    if (channel == null || _isDisposed) return null;
+    return channel.invokeMethod<double>('getDeviceVolume');
+  }
+
+  @override
+  Future<void> setDeviceVolume(double volume) =>
+      _invoke('setDeviceVolume', {'volume': volume});
+
+  @override
   Future<FEngineSnapshot> snapshot() async {
     final channel = _channel;
     if (channel == null || _isDisposed) {

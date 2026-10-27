@@ -43,7 +43,8 @@ class FGestureConfig {
   /// Dragging sideways scrubs, with a preview while the finger is down.
   final bool horizontalDragSeeks;
 
-  /// Dragging up and down on the right half changes the player's volume.
+  /// Dragging up and down on the right half changes the device's media volume, the way the
+  /// hardware keys would. Where the engine cannot reach it, the player's own gain instead.
   final bool verticalDragAdjustsVolume;
 
   /// Dragging up and down on the left half changes screen brightness.

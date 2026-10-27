@@ -133,6 +133,18 @@ class FakeEngine implements FPlaybackEngine {
   @override
   Future<double> brightness() async => windowBrightness;
 
+  /// The device's media volume, or null to play an engine that cannot reach it.
+  double? deviceMediaVolume = 0.5;
+
+  @override
+  Future<double?> deviceVolume() async => deviceMediaVolume;
+
+  @override
+  Future<void> setDeviceVolume(double volume) async {
+    calls.add('setDeviceVolume:$volume');
+    deviceMediaVolume = volume;
+  }
+
   @override
   Future<FEngineSnapshot> snapshot() async => FEngineSnapshot(
         position: position,
