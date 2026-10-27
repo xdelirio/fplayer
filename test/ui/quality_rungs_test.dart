@@ -56,6 +56,24 @@ void main() {
     expect(rungs.length, 2);
   });
 
+  group('the badge beside each rung', () {
+    test('follows the rung the row is named after, wide films included', () {
+      final cases = {
+        track(id: '720', width: 1280, height: 720): ('720p', 'HD'),
+        track(id: 'wide720', width: 1280, height: 536): ('720p', 'HD'),
+        track(id: 'wide1080', width: 1920, height: 800): ('1080p', 'HD'),
+        track(id: 'uhd', width: 3840, height: 2160): ('2160p', '4K'),
+        track(id: 'wideUhd', width: 3840, height: 1600): ('2160p', '4K'),
+        track(id: '480', width: 854, height: 480): ('480p', null),
+        track(id: 'none'): (null, null),
+      };
+
+      for (final MapEntry(key: t, value: (label, badge)) in cases.entries) {
+        expect((t.qualityLabel, qualityBadge(t)), (label, badge), reason: t.id);
+      }
+    });
+  });
+
   group('the bitrate beside each rung', () {
     late FakeEngine engine;
     late FPlayerController controller;

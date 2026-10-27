@@ -345,11 +345,14 @@ List<FVideoTrack> distinctQualityRungs(List<FVideoTrack> video) {
 }
 
 /// The shorthand people read off a quality menu, when the rung earns one.
+///
+/// Read off the rung the row is named after, not the raw height: a 1280×536 film is listed as
+/// `720p` and must be tagged like every other `720p`, and a 3840×1600 one is `2160p`, so `4K`.
 String? qualityBadge(FVideoTrack track) {
-  final height = track.height;
-  if (height == null) return null;
-  if (height >= 2000) return '4K';
-  if (height >= 700) return 'HD';
+  final rung = track.qualityRung;
+  if (rung == null) return null;
+  if (rung >= 2160) return '4K';
+  if (rung >= 720) return 'HD';
   return null;
 }
 

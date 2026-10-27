@@ -213,16 +213,21 @@ final class FVideoTrack extends FTrack {
   /// recognises. Wide frames are normalised to their 16:9 equivalent height and snapped to the
   /// nearest standard rung. Use [width] and [height] directly if you need the raw numbers.
   String? get qualityLabel {
+    final rung = qualityRung;
+    return rung == null ? null : '${rung}p';
+  }
+
+  /// The standard rung [qualityLabel] names, as a number: `1080` for a 1680×750 rendition.
+  int? get qualityRung {
     final h = height;
     if (h == null) return null;
 
     final w = width;
     final equivalent = (w != null && w * 9 / 16 > h) ? (w * 9 / 16).round() : h;
 
-    final nearest = _ladder.reduce(
+    return _ladder.reduce(
       (a, b) => (a - equivalent).abs() <= (b - equivalent).abs() ? a : b,
     );
-    return '${nearest}p';
   }
 
   @override
