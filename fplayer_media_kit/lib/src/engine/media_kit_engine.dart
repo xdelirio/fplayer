@@ -542,6 +542,14 @@ class FMediaKitEngine implements FPlaybackEngine {
   @override
   Future<double> brightness() async => 0.5;
 
+  /// Null: the device volume is reached through the host, and this engine has no channel to it. The
+  /// volume gesture moves the player's own gain instead.
+  @override
+  Future<double?> deviceVolume() async => null;
+
+  @override
+  Future<void> setDeviceVolume(double volume) async {}
+
   @override
   Future<FEngineSnapshot> snapshot() async {
     final state = _player?.state;

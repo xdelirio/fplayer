@@ -31,10 +31,16 @@ class _FGestureLayerState extends State<FGestureLayer> {
   static const _axisThreshold = 24.0;
 
   _DragAxis _axis = _DragAxis.undecided;
-  bool _isDragAllowed = false;
+
+  /// Whether the chrome was up when the gesture began. Seeking and pinching need it; volume and
+  /// brightness do not.
+  bool _wereControlsVisible = false;
   Offset _dragTotal = Offset.zero;
   Duration _seekOrigin = Duration.zero;
-  double _volumeOrigin = 1;
+
+  /// Where a volume drag starts from, and whether it moves the device's media volume or, where
+  /// the engine cannot reach that, the player's own gain. Null until the platform has answered.
+  ({double origin, bool isDevice})? _volumeStart;
   double _brightnessOrigin = 0.5;
 
   /// Whether a drag on this layer overrode the screen brightness.
@@ -88,13 +94,16 @@ class _FGestureLayerState extends State<FGestureLayer> {
   @override
   Widget build(BuildContext context) {
     final gestures = _ui.config.gestures;
-    // Drags and pinches only while the chrome is up. Over a bare picture the next touch is
-    // nearly always a tap meant to bring the controls back, and a few pixels of travel turned
-    // it into a brightness, volume or seek change instead.
+    // Seeking and pinching only while the chrome is up, which [_onScaleUpdate] enforces. Volume
+    // and brightness work over a bare picture too: that is where people reach for them, and the
+    // drag threshold keeps a tap that wobbled from becoming one.
     //
     // Kept while a drag is under way, though: the chrome can time out mid-swipe, and taking the
     // recogniser away then would drop the end of the gesture and leave its badge on screen.
-    final canDrag = (_ui.areControlsVisible && !_ui.isLocked) || _axis != _DragAxis.undecided;
+    final hasVerticalDrags =
+        gestures.verticalDragAdjustsVolume || gestures.verticalDragAdjustsBrightness;
+    final canDrag = (!_ui.isLocked && (_ui.areControlsVisible || hasVerticalDrags)) ||
+        _axis != _DragAxis.undecided;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -231,11 +240,11 @@ class _FGestureLayerState extends State<FGestureLayer> {
 
   void _onScaleStart(ScaleStartDetails details, BoxConstraints constraints) {
     // Decided once, at touch-down: the recogniser can outlive the chrome by one gesture.
-    _isDragAllowed = _ui.areControlsVisible;
+    _wereControlsVisible = _ui.areControlsVisible;
     _axis = _DragAxis.undecided;
     _dragTotal = Offset.zero;
     _seekOrigin = _ui.controller.position;
-    _volumeOrigin = _ui.controller.volume;
+    _volumeStart = null;
     // Latched at the start rather than read from the live focal point: a diagonal volume swipe
     // that drifts past the middle would otherwise turn into a brightness swipe halfway through,
     // leaving the volume stuck at whatever it had reached and dimming the screen instead.
@@ -249,13 +258,23 @@ class _FGestureLayerState extends State<FGestureLayer> {
         if (mounted && gesture == _gestureId) _brightnessOrigin = value;
       }),
     );
+    // The device's media volume, not the player's gain: the gain starts at full, so a drag on it
+    // could only ever go down, while the phone itself sat at half volume.
+    unawaited(
+      _ui.controller.deviceVolume().then((value) {
+        if (!mounted || gesture != _gestureId) return;
+        _volumeStart = value == null
+            ? (origin: _ui.controller.volume, isDevice: false)
+            : (origin: value, isDevice: true);
+      }),
+    );
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details, BoxConstraints constraints) {
-    if (_ui.isLocked || !_isDragAllowed) return;
+    if (_ui.isLocked) return;
 
     if (details.pointerCount > 1) {
-      if (_ui.config.gestures.pinchChangesFit) _onPinch(details.scale);
+      if (_ui.config.gestures.pinchChangesFit && _wereControlsVisible) _onPinch(details.scale);
       return;
     }
 
@@ -273,8 +292,12 @@ class _FGestureLayerState extends State<FGestureLayer> {
         // forced the chrome on screen, held the auto-hide off for the length of the drag, and
         // committed a seek to the current position on release. A needless rebuffer for a
         // gesture the app had turned off.
+        //
+        // Over a bare picture, too: a sideways swipe there is nearly always a tap meant to bring
+        // the controls back, not a seek.
         final value = _ui.controller.value;
-        if (!_ui.config.gestures.horizontalDragSeeks ||
+        if (!_wereControlsVisible ||
+            !_ui.config.gestures.horizontalDragSeeks ||
             !value.isSeekable ||
             value.duration == null) {
           _axis = _DragAxis.undecided;
@@ -355,8 +378,14 @@ class _FGestureLayerState extends State<FGestureLayer> {
     final change = -_dragTotal.dy / constraints.maxHeight;
 
     if (isRightHalf) {
-      final target = (_volumeOrigin + change).clamp(0.0, 1.0);
-      _ui.controller.setVolume(target);
+      // Still waiting on the platform for where to start from. The drag threshold makes this a
+      // frame or two at most, and guessing would make the volume jump.
+      final start = _volumeStart;
+      if (start == null) return;
+      final target = (start.origin + change).clamp(0.0, 1.0);
+      start.isDevice
+          ? unawaited(_ui.controller.setDeviceVolume(target))
+          : unawaited(_ui.controller.setVolume(target));
       _showFeedback(
         _FeedbackKind.volume,
         text: '${(target * 100).round()}%',

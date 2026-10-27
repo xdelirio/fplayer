@@ -124,6 +124,15 @@ abstract interface class FPlaybackEngine {
   /// none is in force.
   Future<double> brightness();
 
+  /// The device's media volume, `0.0` to `1.0`, or null where the engine cannot reach it.
+  ///
+  /// What the volume gesture moves when it can. Null sends the gesture to the player's own gain
+  /// instead, through [setVolume].
+  Future<double?> deviceVolume();
+
+  /// Sets the device's media volume, `0.0` to `1.0`. A no-op where [deviceVolume] is null.
+  Future<void> setDeviceVolume(double volume);
+
   Future<FEngineSnapshot> snapshot();
 
   Future<void> dispose();

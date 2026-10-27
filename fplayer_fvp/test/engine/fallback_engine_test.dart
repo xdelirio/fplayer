@@ -101,6 +101,12 @@ class _StubEngine implements FPlaybackEngine {
   Future<double> brightness() async => 0.5;
 
   @override
+  Future<double?> deviceVolume() async => null;
+
+  @override
+  Future<void> setDeviceVolume(double volume) async => calls.add('setDeviceVolume');
+
+  @override
   Future<FEngineSnapshot> snapshot() async => const FEngineSnapshot(
         position: Duration.zero,
         buffered: Duration.zero,

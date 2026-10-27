@@ -4,6 +4,7 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -467,6 +468,13 @@ internal class PlayerHost(
 
             "getBrightness" -> result.success(window.brightness())
 
+            "getDeviceVolume" -> result.success(deviceVolume())
+
+            "setDeviceVolume" -> {
+                setDeviceVolume(call.argument<Number>("volume")?.toDouble() ?: 0.0)
+                result.success(null)
+            }
+
             "getSnapshot" -> result.success(snapshot())
 
             else -> result.notImplemented()
@@ -522,6 +530,42 @@ internal class PlayerHost(
         val updated = source + ("subtitles" to existing + subtitle)
 
         setSource(updated, startAtMs = player.currentPosition, play = player.playWhenReady)
+    }
+
+    private val audioManager: AudioManager?
+        get() = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
+    /**
+     * The device's media volume, `0..1`, or null when it cannot be read.
+     *
+     * What the volume gesture moves. The player's own gain starts at full, so a drag on it could
+     * only ever go down: dragging up did nothing while the phone itself stayed at half volume.
+     */
+    private fun deviceVolume(): Double? {
+        val audio = audioManager ?: return null
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) return null
+        return audio.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / max
+    }
+
+    /**
+     * Sets the device's media volume from `0..1`, rounded to the stream's own steps.
+     *
+     * No flags: the player draws its own badge, and the system slider on top of it would cover
+     * the picture twice. Volumes the policy refuses — Do Not Disturb, a fixed-volume device —
+     * are left alone rather than failing the call.
+     */
+    private fun setDeviceVolume(value: Double) {
+        val audio = audioManager ?: return
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) return
+        val index = Math.round(value.coerceIn(0.0, 1.0) * max).toInt()
+        if (index == audio.getStreamVolume(AudioManager.STREAM_MUSIC)) return
+        try {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0)
+        } catch (e: SecurityException) {
+            Log.w(LOG_TAG, "player $playerId: device volume refused", e)
+        }
     }
 
     /** Point-in-time state, used by Dart to resync after an app resume. */

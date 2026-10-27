@@ -31,7 +31,8 @@ void main() {
     // The chrome sits above the gesture layer and the play button occupies the exact centre, so
     // gestures are exercised in the state they are actually used in: with the controls faded out.
     //
-    // Drags are the exception: they only exist while the chrome is up, so those tests ask for it.
+    // Seeking and pinching are the exception: they only exist while the chrome is up, so those
+    // tests ask for it.
     withControls ? uiOf(tester).showControls() : uiOf(tester).hideControls();
     engine.calls.clear();
     await tester.pump();
@@ -124,34 +125,60 @@ void main() {
     await settlePlayer(tester);
   });
 
-  testWidgets('dragging up on the right raises the volume', (tester) async {
-    await ready(tester, withControls: true);
+  testWidgets('dragging up on the right raises the device volume', (tester) async {
+    await ready(tester);
     expect(controller.volume, 1.0);
-    await controller.setVolume(0.5);
-    engine.calls.clear();
 
-    // Up is louder, and a full-height drag spans the whole range.
+    // Up is louder, and a full-height drag spans the whole range. The device, not the player's
+    // gain: that starts at full, so dragging up on it did nothing at all.
     await tester.dragFrom(const Offset(700, 300), const Offset(0, -112));
     await tester.pump();
 
-    expect(controller.volume, greaterThan(0.5));
-    expect(engine.calls.any((c) => c.startsWith('setVolume')), isTrue);
+    expect(engine.deviceMediaVolume, greaterThan(0.5));
+    expect(controller.volume, 1.0);
+    expect(engine.calls.where((c) => c.startsWith('setVolume')), isEmpty);
     await settlePlayer(tester);
   });
 
-  testWidgets('dragging down on the right lowers the volume', (tester) async {
-    await ready(tester, withControls: true);
-    await controller.setVolume(0.8);
+  testWidgets('dragging down on the right lowers the device volume', (tester) async {
+    await ready(tester);
+    engine.deviceMediaVolume = 0.8;
 
     await tester.dragFrom(const Offset(700, 150), const Offset(0, 112));
     await tester.pump();
 
-    expect(controller.volume, lessThan(0.8));
+    expect(engine.deviceMediaVolume, lessThan(0.8));
+    await settlePlayer(tester);
+  });
+
+  testWidgets('raising the device volume unmutes the player', (tester) async {
+    await ready(tester);
+    await controller.toggleMute();
+    expect(controller.value.isMuted, isTrue);
+
+    await tester.dragFrom(const Offset(700, 300), const Offset(0, -112));
+    await tester.pump();
+
+    expect(controller.value.isMuted, isFalse);
+    await settlePlayer(tester);
+  });
+
+  testWidgets('without a device volume the drag moves the player gain', (tester) async {
+    await ready(tester);
+    engine.deviceMediaVolume = null;
+    await controller.setVolume(0.5);
+    engine.calls.clear();
+
+    await tester.dragFrom(const Offset(700, 300), const Offset(0, -112));
+    await tester.pump();
+
+    expect(controller.volume, greaterThan(0.5));
+    expect(engine.calls.where((c) => c.startsWith('setDeviceVolume')), isEmpty);
     await settlePlayer(tester);
   });
 
   testWidgets('dragging up on the left raises the brightness', (tester) async {
-    await ready(tester, withControls: true);
+    await ready(tester);
     engine.windowBrightness = 0.4;
 
     await tester.dragFrom(const Offset(100, 300), const Offset(0, -112));
@@ -180,15 +207,13 @@ void main() {
   });
 
   testWidgets('volume and brightness stay on their own halves', (tester) async {
-    await ready(tester, withControls: true);
-    await controller.setVolume(0.5);
-    engine.calls.clear();
+    await ready(tester);
 
     await tester.dragFrom(const Offset(100, 300), const Offset(0, -112));
     await tester.pump();
 
     // Touching the left half must not move the volume, or the two gestures would fight.
-    expect(controller.volume, 0.5);
+    expect(engine.calls.where((c) => c.startsWith('setDeviceVolume')), isEmpty);
     expect(engine.calls.any((c) => c.startsWith('setBrightness')), isTrue);
     await settlePlayer(tester);
   });
@@ -214,38 +239,31 @@ void main() {
     await settlePlayer(tester);
   });
 
-  testWidgets('a drag over the bare picture only brings the controls back', (tester) async {
+  testWidgets('a sideways swipe over the bare picture does not seek', (tester) async {
     await ready(tester);
-    await controller.setVolume(0.5);
-    engine.calls.clear();
 
-    // A tap that wobbles — or a deliberate swipe — over a picture with nothing on it is a request
-    // for the controls. It used to change the volume, the brightness or the position instead.
-    await tester.dragFrom(const Offset(700, 300), const Offset(0, -112));
-    await tester.dragFrom(const Offset(100, 300), const Offset(0, -112));
+    // Over a picture with nothing on it, a sideways swipe is nearly always a tap meant to bring
+    // the controls back. Volume and brightness are the exception, covered above.
     await tester.dragFrom(const Offset(200, 130), const Offset(200, 0));
     await tester.pump(kDoubleTapTimeout);
 
-    expect(controller.volume, 0.5);
-    expect(engine.calls.where((c) => c.startsWith('setBrightness')), isEmpty);
     expect(uiOf(tester).isScrubbing, isFalse);
     expect(engine.calls.where((c) => c.startsWith('seekTo')), isEmpty);
     await settlePlayer(tester);
   });
 
   testWidgets('a wobble under the drag threshold is not a drag', (tester) async {
-    await ready(tester, withControls: true);
-    await controller.setVolume(0.5);
+    await ready(tester);
 
     await tester.dragFrom(const Offset(700, 300), const Offset(0, -16));
     await tester.pump();
 
-    expect(controller.volume, 0.5);
+    expect(engine.calls.where((c) => c.startsWith('setDeviceVolume')), isEmpty);
     await settlePlayer(tester);
   });
 
   testWidgets('leaving the player hands the brightness back to the device', (tester) async {
-    await ready(tester, withControls: true);
+    await ready(tester);
     engine.windowBrightness = 0.4;
 
     await tester.dragFrom(const Offset(100, 300), const Offset(0, -112));
@@ -292,7 +310,7 @@ void main() {
 
     await tester.dragFrom(const Offset(700, 300), const Offset(0, -112));
     await tester.pump();
-    expect(controller.volume, 1.0);
+    expect(engine.calls.where((c) => c.startsWith('setDeviceVolume')), isEmpty);
     await settlePlayer(tester);
   });
 }

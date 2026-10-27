@@ -27,6 +27,16 @@
 
 ### Changed
 
+- **The volume gesture moves the device's media volume**, the way the hardware
+  keys do, not the player's own gain. The gain starts at full, so dragging up
+  did nothing while the phone sat at half volume. Raising it from a mute
+  unmutes the player. `FPlaybackEngine` gained `deviceVolume` and
+  `setDeviceVolume`; engines that cannot reach the device (fvp, media_kit)
+  return null, and the gesture falls back to the gain there.
+- **Volume and brightness drags work over a bare picture again.** Since the
+  previous release they needed the controls on screen, so a swipe on the
+  picture did nothing. Sideways seeking and pinching still need the controls.
+
 - **The chrome is no longer rebuilt while it is off screen.** Playback notifies
   several times a second, and every one of those rebuilt the whole chrome — the
   seek bar, the volume slider, a dozen buttons, the scrolling row of pickers —
