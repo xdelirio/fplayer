@@ -55,6 +55,13 @@
 
 ### Fixed
 
+- **Desktop tracks have their names, and DASH subtitles show up.** The FFmpeg
+  in media_kit drops the `<Label>` of a DASH adaptation set and the `NAME` of
+  an HLS rendition, so audio was listed as `es-419`; it also skips DASH text
+  adaptation sets, so there were no subtitles to choose. `FMediaKitEngine`
+  now reads the manifest beside mpv: names come from it, and text tracks —
+  fMP4 `wvtt` segments or plain WebVTT files — are converted to WebVTT and
+  added to mpv, with their forced and caption roles.
 - **Brightness goes back to the device's when the player closes.** The value
   dragged to is applied to the Activity's window, and nothing cleared it, so
   the rest of the app kept it after the video closed. Closing the player view

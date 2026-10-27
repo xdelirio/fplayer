@@ -108,4 +108,64 @@ void main() {
     expect(isRealTrackId('no'), isFalse);
     expect(isRealTrackId('1'), isTrue);
   });
+
+  group('manifest names', () {
+    final dash = mk.Tracks(
+      audio: [
+        mk.AudioTrack.auto(),
+        const mk.AudioTrack('1', null, 'es-419'),
+        const mk.AudioTrack('2', null, 'en-US'),
+        const mk.AudioTrack('3', 'Commentary', 'en-US'),
+      ],
+      subtitle: [
+        const mk.SubtitleTrack('1', 'Español (Latinoamérica)', 'es-419'),
+        const mk.SubtitleTrack('2', 'Español (Latinoamérica)', 'es-419'),
+      ],
+    );
+
+    test('label the tracks FFmpeg leaves with only a language', () {
+      final tracks = decodeMediaKitTracks(
+        dash,
+        activeVideo: null,
+        activeAudio: '1',
+        activeText: null,
+        isTextDisabled: true,
+        audioNames: {
+          'es-419': ['Español (Latinoamérica)'],
+          'en-US': ['English (United States)', 'English (Commentary)'],
+        },
+      );
+
+      expect(tracks.audio.map((t) => t.displayName), [
+        'Español (Latinoamérica)',
+        'English (United States)',
+        // mpv's own title wins over the manifest.
+        'Commentary',
+      ]);
+    });
+
+    test('carry the roles of the text tracks the engine added', () {
+      final tracks = decodeMediaKitTracks(
+        dash,
+        activeVideo: null,
+        activeAudio: null,
+        activeText: '2',
+        isTextDisabled: false,
+        textRoles: {'1': (isForced: true, isClosedCaption: false)},
+      );
+
+      expect(tracks.text.map((t) => t.isForced), [true, false]);
+      expect(tracks.text.map((t) => t.isSelected), [false, true]);
+    });
+
+    test('reuse the last name past the end of a language', () {
+      final names = {
+        'en': ['English'],
+      };
+      expect(manifestNameFor(names, 'en', 0), 'English');
+      expect(manifestNameFor(names, 'en', 2), 'English');
+      expect(manifestNameFor(names, 'fr', 0), isNull);
+      expect(manifestNameFor(names, null, 0), isNull);
+    });
+  });
 }

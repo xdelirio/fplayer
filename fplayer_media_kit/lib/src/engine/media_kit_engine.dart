@@ -1,6 +1,8 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:convert' show jsonDecode, utf8;
+import 'dart:io' show HttpClient, HttpStatus, Platform;
 import 'dart:math' as math;
+import 'dart:typed_data' show BytesBuilder, Uint8List;
 import 'dart:ui' show Rect, Size;
 
 import 'package:flutter/foundation.dart' show debugPrint;
@@ -10,8 +12,11 @@ import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:window_manager/window_manager.dart' show WindowListener, windowManager;
 
+import 'dash_manifest.dart';
+import 'hls_renditions.dart';
 import 'media_kit_tracks.dart';
 import 'mpv_error.dart';
+import 'wvtt.dart';
 
 /// libmpv backend, for every platform the Media3 engine does not reach.
 ///
@@ -83,6 +88,20 @@ class FMediaKitEngine implements FPlaybackEngine {
   bool _isLive = false;
 
   mk.Tracks _tracks = const mk.Tracks();
+
+  /// What the source's manifest calls its audio and text tracks, by language. FFmpeg drops these
+  /// names; see [HlsRenditionNames] and [DashManifest].
+  Map<String, List<String>> _audioNames = const {};
+  Map<String, List<String>> _textNames = const {};
+
+  /// Roles of the text tracks this engine added from a DASH manifest, by mpv track id.
+  final Map<String, ({bool isForced, bool isClosedCaption})> _textRoles = {};
+
+  /// Subtitle languages to pick from, for the tracks added after mpv made its own choice.
+  List<String> _preferredTextLanguages = const [];
+
+  /// Completes when the current source's track list first arrives.
+  Completer<void> _tracksArrived = Completer<void>();
 
   /// What mpv reports as selected, by property name: `vid`, `aid`, `sid`.
   final Map<String, String?> _selected = {'vid': null, 'aid': null, 'sid': null};
@@ -302,6 +321,7 @@ class FMediaKitEngine implements FPlaybackEngine {
     // after a failed item into a failed next item.
     _isOpening = true;
     _loadReason = null;
+    unawaited(_readManifest(source, generation));
 
     for (final subtitle in source.subtitles) {
       if (_isDisposed || generation != _sourceGeneration) return;
@@ -419,6 +439,7 @@ class FMediaKitEngine implements FPlaybackEngine {
   Future<void> setPreferredLanguages({List<String>? audio, List<String>? text}) async {
     if (_player == null || _isDisposed) return;
     if (audio != null) await _native.setProperty('alang', audio.join(','));
+    if (text != null) _preferredTextLanguages = text;
     if (text != null && !_isDisposed) await _native.setProperty('slang', text.join(','));
   }
 
@@ -618,7 +639,149 @@ class FMediaKitEngine implements FPlaybackEngine {
     _outputSize = null;
     _duration = null;
     _tracks = const mk.Tracks();
+    _audioNames = const {};
+    _textNames = const {};
+    _textRoles.clear();
+    if (!_tracksArrived.isCompleted) _tracksArrived.complete();
+    _tracksArrived = Completer<void>();
     _selected.updateAll((_, _) => null);
+  }
+
+  /// Reads what FFmpeg leaves out of [source]'s manifest: the names of its tracks and, for DASH,
+  /// its subtitles.
+  ///
+  /// Beside the load rather than in front of it: mpv fetches the same manifest on its own, and a
+  /// slow or failing second fetch only costs the names and the subtitles, never the picture.
+  Future<void> _readManifest(FPlayerSource source, int generation) async {
+    if (source.kind != FSourceKind.network) return;
+    final uri = Uri.tryParse(source.uri);
+    final path = uri?.path.toLowerCase() ?? '';
+    final isHls = path.endsWith('.m3u8');
+    final isDash = path.endsWith('.mpd');
+    if (uri == null || !(isHls || isDash)) return;
+    bool isStale() => _isDisposed || generation != _sourceGeneration;
+
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final manifest = await _fetch(client, uri, source.headers);
+      if (manifest == null || isStale()) return;
+      final text = utf8.decode(manifest, allowMalformed: true);
+
+      if (isHls) {
+        final names = HlsRenditionNames.parse(text);
+        if (names.isEmpty) return;
+        _audioNames = names.audio;
+        _textNames = names.subtitles;
+        if (_hasReportedInitialized) _describeTracks();
+        return;
+      }
+
+      final dash = DashManifest.parse(text, uri);
+      _audioNames = dash.audioNames;
+      if (_hasReportedInitialized) _describeTracks();
+      if (dash.textTracks.isEmpty) return;
+
+      // Only once mpv has listed what it found itself: an FFmpeg that one day reads these
+      // adaptation sets would otherwise show every subtitle twice.
+      await _tracksArrived.future;
+      if (isStale()) return;
+      final found = _tracks.subtitle.where((t) => isRealTrackId(t.id)).length;
+      if (found > source.subtitles.length) return;
+
+      final files = await Future.wait([
+        for (final track in dash.textTracks) _readTextTrack(client, track, source.headers),
+      ]);
+      if (isStale()) return;
+
+      final preferred = _isTextDisabled ? null : _preferredTrack(dash.textTracks, files);
+      for (final (index, track) in dash.textTracks.indexed) {
+        final file = files[index];
+        if (file == null || isStale()) continue;
+        await _native.command([
+          'sub-add',
+          'memory://$file',
+          index == preferred ? 'select' : 'auto',
+          track.label ?? track.language ?? 'external',
+          track.language ?? 'auto',
+        ]);
+        final id = await _lastSubtitleId();
+        if (id != null) {
+          _textRoles[id] = (isForced: track.isForced, isClosedCaption: track.isClosedCaption);
+        }
+      }
+      if (_hasReportedInitialized && !isStale()) _describeTracks();
+    } on Object catch (e) {
+      // A nicety on top of playback: the names and the subtitles stay as mpv found them.
+      debugPrint('fplayer: could not read the manifest: $e');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// One DASH text track as WebVTT text, or null when it could not be read.
+  Future<String?> _readTextTrack(
+    HttpClient client,
+    DashTextTrack track,
+    Map<String, String> headers,
+  ) async {
+    final bytes = BytesBuilder(copy: false);
+    for (final url in track.urls) {
+      final part = await _fetch(client, url, headers);
+      if (part == null) return null;
+      bytes.add(part);
+    }
+    final data = bytes.takeBytes();
+    final box = data.length >= 8 ? String.fromCharCodes(data, 4, 8) : '';
+    if (box == 'ftyp' || box == 'styp') return wvttToWebVtt(data);
+    // A plain WebVTT or SRT file rather than MP4 segments.
+    final text = utf8.decode(data, allowMalformed: true);
+    return text.contains('-->') ? text : null;
+  }
+
+  /// Which of [tracks] to show, the way mpv picks among its own: the first full subtitle in a
+  /// preferred language. Forced tracks are left for the viewer to pick.
+  int? _preferredTrack(List<DashTextTrack> tracks, List<String?> files) {
+    for (final preferred in _preferredTextLanguages) {
+      final wanted = preferred.toLowerCase();
+      for (final (index, track) in tracks.indexed) {
+        final language = track.language?.toLowerCase();
+        if (files[index] == null || track.isForced || language == null) continue;
+        if (language == wanted ||
+            language.startsWith('$wanted-') ||
+            wanted.startsWith('$language-')) {
+          return index;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// The id of the subtitle track mpv added last. `sub-add` reports nothing back, and ids are
+  /// handed out in order.
+  Future<String?> _lastSubtitleId() async {
+    final list = jsonDecode(await _native.getProperty('track-list'));
+    if (list is! List) return null;
+    int? last;
+    for (final track in list) {
+      if (track is Map && track['type'] == 'sub' && track['id'] is int) {
+        final id = track['id'] as int;
+        if (last == null || id > last) last = id;
+      }
+    }
+    return last?.toString();
+  }
+
+  static Future<Uint8List?> _fetch(HttpClient client, Uri uri, Map<String, String> headers) async {
+    final request = await client.getUrl(uri);
+    headers.forEach(request.headers.set);
+    final response = await request.close().timeout(const Duration(seconds: 15));
+    if (response.statusCode != HttpStatus.ok) {
+      await response.drain<void>();
+      return null;
+    }
+    final bytes = BytesBuilder(copy: false);
+    await response.forEach(bytes.add).timeout(const Duration(seconds: 30));
+    return bytes.takeBytes();
   }
 
   /// Announces the media once mpv has read it: the moment the track list arrives.
@@ -629,6 +792,7 @@ class FMediaKitEngine implements FPlaybackEngine {
   void _reportInitialized() {
     if (_hasReportedInitialized) return;
     _hasReportedInitialized = true;
+    if (!_tracksArrived.isCompleted) _tracksArrived.complete();
     _emit(
       FEngineInitialized(
         duration: _duration,
@@ -681,6 +845,9 @@ class FMediaKitEngine implements FPlaybackEngine {
           activeAudio: _selected['aid'],
           activeText: _selected['sid'],
           isTextDisabled: _isTextDisabled,
+          audioNames: _audioNames,
+          textNames: _textNames,
+          textRoles: _textRoles,
         ),
       ),
     );
