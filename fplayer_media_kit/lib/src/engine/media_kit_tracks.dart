@@ -12,7 +12,25 @@ FTracks decodeMediaKitTracks(
   required String? activeAudio,
   required String? activeText,
   required bool isTextDisabled,
+  Map<String, List<String>> audioNames = const {},
+  Map<String, List<String>> textNames = const {},
+  Map<String, ({bool isForced, bool isClosedCaption})> textRoles = const {},
 }) {
+  // How many tracks of each language have been seen, so the nth one takes the nth name the
+  // manifest gives that language. See [manifestNameFor].
+  final seenAudio = <String?, int>{};
+  final seenText = <String?, int>{};
+  String? labelOf(
+    String? title,
+    String? language,
+    Map<String, List<String>> names,
+    Map<String?, int> seen,
+  ) {
+    final occurrence = seen[language] = (seen[language] ?? -1) + 1;
+    if (title != null && title.isNotEmpty) return title;
+    return manifestNameFor(names, language, occurrence);
+  }
+
   final audio = <FAudioTrack>[];
   final text = <FTextTrack>[];
   final video = <FVideoTrack>[];
@@ -23,7 +41,7 @@ FTracks decodeMediaKitTracks(
       FAudioTrack(
         id: stream.id,
         index: audio.length,
-        label: stream.title,
+        label: labelOf(stream.title, stream.language, audioNames, seenAudio),
         language: _language(stream.language),
         isSelected: isSelected,
         isActive: isSelected,
@@ -43,13 +61,15 @@ FTracks decodeMediaKitTracks(
       FTextTrack(
         id: stream.id,
         index: text.length,
-        label: stream.title,
+        label: labelOf(stream.title, stream.language, textNames, seenText),
         language: _language(stream.language),
         isSelected: isSelected,
         isActive: isSelected,
         isSupported: true,
         isDefault: stream.isDefault ?? text.isEmpty,
         mimeType: stream.codec,
+        isForced: textRoles[stream.id]?.isForced ?? false,
+        isClosedCaption: textRoles[stream.id]?.isClosedCaption ?? false,
       ),
     );
   }
@@ -87,6 +107,17 @@ FTracks decodeMediaKitTracks(
     // adaptation that never happens.
     isVideoAuto: false,
   );
+}
+
+/// The name a manifest gives the [occurrence]th track in [language], counting from zero.
+///
+/// FFmpeg opens renditions in manifest order, so the nth track in a language is the nth one the
+/// manifest lists in it. Past the end — one rendition listed once per HLS group but opened once
+/// per variant — the last name is the right one.
+String? manifestNameFor(Map<String, List<String>> names, String? language, int occurrence) {
+  final candidates = names[language];
+  if (candidates == null || candidates.isEmpty) return null;
+  return candidates[occurrence < candidates.length ? occurrence : candidates.length - 1];
 }
 
 /// Whether [id] names a stream in the media, rather than one of mpv's selection keywords.
