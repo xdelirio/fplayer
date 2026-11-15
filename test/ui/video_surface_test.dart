@@ -136,4 +136,26 @@ void main() {
       expect(tester.getSize(find.byType(PlatformViewLink)), const Size(800, 400));
     });
   });
+
+  testWidgets('moves to the platform view when the engine changes its output mid-playback', (
+    tester,
+  ) async {
+    final engine = FakeEngine();
+    final controller = FPlayerController(engine: engine);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    await pumpSurface(tester, controller: controller);
+    expect(find.byType(Texture), findsOneWidget);
+
+    // What the Android engine does on meeting 10-bit video: no field of the value moves.
+    engine
+      ..textureIdOverride = null
+      ..platformViewIdOverride = 7
+      ..emit(const FEngineOutputChanged());
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(Texture), findsNothing);
+    expect(find.byType(PlatformViewLink), findsOneWidget);
+  });
 }

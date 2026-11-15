@@ -13,6 +13,7 @@ import android.view.Surface
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -21,6 +22,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.MediaLoadData
@@ -76,7 +78,8 @@ internal class PlayerHost(
     // property initializer it ran before `init`, and a throw from anything after it left this
     // texture registered with the engine for the life of the process. Never created at all on
     // the SurfaceView path, where there is no texture to render into.
-    private lateinit var surfaceProducer: TextureRegistry.SurfaceProducer
+    // Null again once the player has moved to a SurfaceView — see `moveToSurfaceView`.
+    private var surfaceProducer: TextureRegistry.SurfaceProducer? = null
 
     /**
      * Whether frames go to a `SurfaceView` handed over by a platform view rather than to a
@@ -87,12 +90,16 @@ internal class PlayerHost(
      * import cannot read — see `VideoPlatformView` — while on a phone the platform view forces
      * hybrid composition, which makes every Flutter frame above the video cost a copy.
      */
-    private val usesSurfaceView: Boolean =
+    private var usesSurfaceView: Boolean =
         when (config.string("renderMode")) {
             "surfaceView" -> true
             "texture" -> false
             else -> isTelevision(context)
         }
+
+    /** Whether the output is this class's to choose, rather than one the app asked for by name. */
+    private val choosesOutput: Boolean =
+        config.string("renderMode").let { it != "surfaceView" && it != "texture" }
 
     /** What `usesSurfaceView` resolved to, so Dart knows which widget to build. */
     val renderMode: String get() = if (usesSurfaceView) "surfaceView" else "texture"
@@ -171,7 +178,7 @@ internal class PlayerHost(
     private val seekStepMs: Long = config.map("playback").long("seekStepMs") ?: 10_000L
 
     /** Texture handed back to Dart so it can build a `Texture(textureId: ...)` widget. */
-    val textureId: Long? get() = if (usesSurfaceView) null else surfaceProducer.id()
+    val textureId: Long? get() = if (usesSurfaceView) null else surfaceProducer?.id()
 
     private val progressTicker =
         object : Runnable {
@@ -243,6 +250,16 @@ internal class PlayerHost(
                     emitTracksIfActiveChanged()
                 }
 
+                // The format as the container describes it, which is the first place a stream
+                // whose manifest names no codec says how deep its samples are.
+                override fun onVideoInputFormatChanged(
+                    eventTime: AnalyticsListener.EventTime,
+                    format: Format,
+                    decoderReuseEvaluation: DecoderReuseEvaluation?,
+                ) {
+                    if (VideoDepth.isBeyondTexture(format)) moveToSurfaceView()
+                }
+
                 // What a stutter on a television is, told apart in logcat. A box has one or two
                 // hardware decoder instances; when another player still holds them, decoder
                 // fallback quietly hands this one a software decoder, and a 4K or AV1 stream
@@ -271,7 +288,7 @@ internal class PlayerHost(
             },
         )
 
-        if (!usesSurfaceView) surfaceProducer.setCallback(this)
+        surfaceProducer?.setCallback(this)
         attachSurface()
 
         val background = config.map("background")
@@ -652,6 +669,16 @@ internal class PlayerHost(
     }
 
     override fun onTracksChanged(tracks: Tracks) {
+        // Before the decoder is given anything to draw on, where the format already says it.
+        val isBeyondTexture =
+            tracks.groups.any { group ->
+                group.type == C.TRACK_TYPE_VIDEO &&
+                    (0 until group.length).any { index ->
+                        group.isTrackSelected(index) &&
+                            VideoDepth.isBeyondTexture(group.getTrackFormat(index))
+                    }
+            }
+        if (isBeyondTexture) moveToSurfaceView()
         emitTracks()
     }
 
@@ -819,8 +846,54 @@ internal class PlayerHost(
     }
 
     override fun onSurfaceCleanup() {
+        if (usesSurfaceView) return
         player.setVideoSurface(null)
         needsSurface = true
+    }
+
+    /**
+     * Leaves the texture for a SurfaceView, for video the texture cannot show.
+     *
+     * A frame reaches a Flutter texture through an `ImageReader` and a GPU import that reads it
+     * as 8-bit YUV. 10-bit video — AV1 as it is usually encoded, HEVC Main 10, anything HDR —
+     * arrives in a 16-bit layout, and the import turns it into green and magenta noise: on
+     * phones, and from the platform's software decoder as much as from the SoC's. The decode is
+     * fine; a SurfaceView shows the same buffers correctly.
+     *
+     * One way only. A player that has met such a stream stays on the SurfaceView, which shows
+     * everything, rather than swapping outputs with each item of a playlist. And only under
+     * `renderMode: auto` — an app that asked for the texture by name keeps it.
+     */
+    private fun moveToSurfaceView() {
+        if (usesSurfaceView || !choosesOutput || isDisposed) return
+        usesSurfaceView = true
+        Log.i(LOG_TAG, "player $playerId: 10-bit video, moving from the texture to a SurfaceView")
+
+        player.setVideoSurface(null)
+        needsSurface = false
+        surfaceProducer?.let {
+            runCatching { it.setCallback(null) }
+            runCatching { it.release() }
+        }
+        surfaceProducer = null
+
+        // Dart mounts the platform view on this, and the view hands its surface over through
+        // `attachExternalSurface`.
+        emit("renderMode", "mode" to "surfaceView")
+
+        // Rotation and frame size are reported differently on this path. Usually nothing has
+        // been reported yet; when it has, it is said again in the new terms.
+        val videoSize = player.videoSize
+        if (videoSize.width > 0 && videoSize.height > 0) {
+            val (width, height) = displaySize(videoSize)
+            emit(
+                "videoSize",
+                "width" to width,
+                "height" to height,
+                "rotationDegrees" to rotationCorrection(),
+                "pixelAspectRatio" to videoSize.pixelWidthHeightRatio.toDouble(),
+            )
+        }
     }
 
     /**
@@ -856,7 +929,7 @@ internal class PlayerHost(
         // Reaching the line below with an uninitialised `surfaceProducer` throws, and the throw
         // lands in `init`, which releases the player it just built.
         if (usesSurfaceView || !needsSurface) return
-        val surface = surfaceProducer.surface
+        val surface = surfaceProducer?.surface
         player.setVideoSurface(surface)
         needsSurface = surface == null
     }
@@ -879,7 +952,7 @@ internal class PlayerHost(
 
         surfaceWidth = width
         surfaceHeight = height
-        surfaceProducer.setSize(width, height)
+        surfaceProducer?.setSize(width, height)
         needsSurface = true
         attachSurface()
     }
@@ -957,7 +1030,7 @@ internal class PlayerHost(
     private fun rotationCorrection(): Int =
         when {
             usesSurfaceView -> 0
-            surfaceProducer.handlesCropAndRotation() -> 0
+            surfaceProducer?.handlesCropAndRotation() == true -> 0
             else -> player.videoFormat?.rotationDegrees ?: 0
         }
 
@@ -1012,10 +1085,11 @@ internal class PlayerHost(
             runCatching { player.release() }
         }
 
-        if (this::surfaceProducer.isInitialized) {
-            runCatching { surfaceProducer.setCallback(null) }
-            runCatching { surfaceProducer.release() }
+        surfaceProducer?.let {
+            runCatching { it.setCallback(null) }
+            runCatching { it.release() }
         }
+        surfaceProducer = null
     }
 
     private companion object {

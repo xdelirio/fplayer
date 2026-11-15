@@ -65,6 +65,31 @@
 
 ### Fixed
 
+- **The app no longer crashes on closing while a video is open, on the
+  desktops.** mpv runs on its own threads and reports every event through a
+  callback that belongs to the Dart isolate. Quitting took the isolate down
+  and left mpv running, its next event called a callback that was gone, and
+  the Dart VM aborted the process (`Callback invoked after it has been
+  deleted`) — every time the window was closed with a player alive. The mpv
+  engine now hears the quit request and releases its player first. If
+  something else refuses the quit — an "unsaved changes" dialog — the player
+  is rebuilt two seconds later where it was.
+- **Green and magenta noise instead of 10-bit video on phones.** Under
+  `renderMode: auto` a phone renders into a Flutter texture, and the texture
+  import reads frames as 8-bit: 10-bit video — AV1 as most services encode
+  it, HEVC Main 10, anything HDR — arrived as noise, from the platform's
+  software decoder as much as from a hardware one. A player that meets such a
+  stream now moves to the SurfaceView, as televisions always have, and stays
+  there; 8-bit video keeps the texture, and `renderMode: texture` asked for by
+  name is left alone. `FEngineOutputChanged` is the new signal that tells the
+  surface the output moved.
+- **The spinner no longer stays over a playing video on the desktops.** mpv
+  can report the end of buffering before it lists the tracks; that report was
+  dropped as the previous file's and never repeated.
+- **A desktop player created on a still screen is finished.** media_kit
+  builds its video output from a post-frame callback, and with nothing
+  animating no frame was due; the engine now asks for one.
+
 - **The `HD` and `4K` tags agree with the rung they sit on.** The tag was
   read off the raw height while the name allows for the width, so a wide
   1280×536 film was `720p` with no tag beside a 16:9 `720p HD`, and a

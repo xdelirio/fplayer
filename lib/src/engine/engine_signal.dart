@@ -115,6 +115,14 @@ final class FEngineTracksChanged extends FEngineSignal {
   final FTracks tracks;
 }
 
+/// The engine now renders somewhere else: `textureId` and `platformViewId` have changed.
+///
+/// Nothing in the playback state moves with it, so nothing else would wake the video surface
+/// to pick the new output up.
+final class FEngineOutputChanged extends FEngineSignal {
+  const FEngineOutputChanged();
+}
+
 /// The set of cues that should be on screen right now. An empty list clears them.
 final class FEngineCuesChanged extends FEngineSignal {
   const FEngineCuesChanged(this.cues);

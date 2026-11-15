@@ -3,10 +3,11 @@ import 'dart:convert' show jsonDecode, utf8;
 import 'dart:io' show Directory, File, HttpClient, HttpStatus, Platform;
 import 'dart:math' as math;
 import 'dart:typed_data' show BytesBuilder, Uint8List;
-import 'dart:ui' show Rect, Size;
+import 'dart:ui' show AppExitResponse, Rect, Size;
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/painting.dart' show Alignment;
+import 'package:flutter/widgets.dart' show WidgetsBinding, WidgetsBindingObserver;
 import 'package:fplayer/fplayer.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
@@ -118,6 +119,15 @@ class FMediaKitEngine implements FPlaybackEngine {
   /// Hears the viewer maximizing the floating window from its own title bar.
   late final _PipWindowListener _windowListener = _PipWindowListener(this);
 
+  /// Hears the app being asked to quit, which is the last moment mpv can be let go of safely.
+  late final _AppExitObserver _exitObserver = _AppExitObserver(this);
+
+  /// What the player was created with, kept for [_revive].
+  FPlayerConfig? _config;
+
+  /// Fires only if the app is still running after a quit that released the player.
+  Timer? _revival;
+
   /// The last engine's teardown, which the next one waits for before it creates a player.
   ///
   /// A page's `State.dispose` cannot await the controller, so the next page's player used to be
@@ -159,30 +169,27 @@ class FMediaKitEngine implements FPlaybackEngine {
     // Disposed while waiting: a player created now would have no one left to free it.
     if (_isDisposed) return;
 
+    _config = config;
+    await _build(config);
+    if (!_isDisposed) WidgetsBinding.instance.addObserver(_exitObserver);
+  }
+
+  static const _teardownWait = Duration(seconds: 5);
+
+  /// [_create], leaving nothing behind when it throws.
+  Future<void> _build(FPlayerConfig config) async {
     try {
       await _create(config);
     } catch (_) {
       // Half a player is worse than none: the controller's retry calls [create] again, and
       // with `_player` set that would be refused for good. Its subscriptions and listeners go
       // with it, or each retry would pile another set onto a dead player.
-      if (_hasWindow) windowManager.removeListener(_windowListener);
-      for (final subscription in _subscriptions) {
-        await subscription.cancel();
-      }
-      _subscriptions.clear();
-      _video?.id.removeListener(_onTextureChanged);
-      _video?.rect.removeListener(_onTextureChanged);
-      await _player?.dispose();
-      _player = null;
-      _video = null;
+      await _releasePlayer();
       rethrow;
     }
   }
 
-  static const _teardownWait = Duration(seconds: 5);
-
   Future<void> _create(FPlayerConfig config) async {
-
     _progressInterval = config.playback.progressInterval;
     _autoPlay = config.playback.autoPlay;
     _isTextDisabled = !config.playback.autoSelectSubtitles;
@@ -219,6 +226,10 @@ class FMediaKitEngine implements FPlaybackEngine {
     );
     _video!.id.addListener(_onTextureChanged);
     _video!.rect.addListener(_onTextureChanged);
+    // media_kit builds the video output from a post-frame callback, and every call below waits
+    // for it. On a screen where nothing is moving no frame is due, and the player was never
+    // finished: ask for one.
+    WidgetsBinding.instance.ensureVisualUpdate();
 
     final stream = player.stream;
     _subscriptions.addAll([
@@ -261,7 +272,8 @@ class FMediaKitEngine implements FPlaybackEngine {
     // Binds the plugin to the main window; it refuses every other call until this has run.
     if (_hasWindow) {
       await windowManager.ensureInitialized();
-      windowManager.addListener(_windowListener);
+      // Disposed during the wait: the teardown has already removed what it knew of.
+      if (!_isDisposed) windowManager.addListener(_windowListener);
     }
   }
 
@@ -450,7 +462,7 @@ class FMediaKitEngine implements FPlaybackEngine {
     if (_player == null || _isDisposed) return;
     if (audio != null) await _native.setProperty('alang', audio.join(','));
     if (text != null) _preferredTextLanguages = text;
-    if (text != null && !_isDisposed) await _native.setProperty('slang', text.join(','));
+    if (text != null && _player != null) await _native.setProperty('slang', text.join(','));
   }
 
   /// Side-loads a subtitle file into the loaded media.
@@ -615,8 +627,9 @@ class FMediaKitEngine implements FPlaybackEngine {
   }
 
   Future<void> _tearDown() async {
-    _stopTicker();
-    if (_hasWindow) windowManager.removeListener(_windowListener);
+    _revival?.cancel();
+    _revival = null;
+    WidgetsBinding.instance.removeObserver(_exitObserver);
     // Leaving the page from the floating window must not leave the app a thumbnail on top of
     // everything, with the bounds to put it back gone along with this engine.
     final bounds = _windowBeforePip;
@@ -624,6 +637,20 @@ class FMediaKitEngine implements FPlaybackEngine {
       _windowBeforePip = null;
       await _restoreWindow(bounds, maximize: _wasMaximizedBeforePip);
     }
+    try {
+      await _releasePlayer();
+    } finally {
+      await _signals.close();
+      await _deleteManifestCopy(_manifestCopy);
+      _manifestCopy = null;
+    }
+  }
+
+  /// Frees the mpv player and everything listening to it. The engine is not disposed by this:
+  /// [_build] can give it another.
+  Future<void> _releasePlayer() async {
+    _stopTicker();
+    if (_hasWindow) windowManager.removeListener(_windowListener);
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
@@ -631,12 +658,93 @@ class FMediaKitEngine implements FPlaybackEngine {
     _video?.id.removeListener(_onTextureChanged);
     _video?.rect.removeListener(_onTextureChanged);
     _video = null;
-    // Releases the video output with it; `VideoController` has no dispose of its own.
-    await _player?.dispose();
+    // Out of reach before it is disposed, not after: nothing may call into it meanwhile.
+    final player = _player;
     _player = null;
-    await _signals.close();
-    await _deleteManifestCopy(_manifestCopy);
-    _manifestCopy = null;
+    // Releases the video output with it; `VideoController` has no dispose of its own.
+    await player?.dispose();
+  }
+
+  /// Lets go of mpv because the app is quitting.
+  ///
+  /// mpv runs on its own threads and tells Dart about every event through a callback that
+  /// belongs to the isolate. A quit takes the isolate down first and leaves mpv running: its
+  /// next event calls a callback that no longer exists, and the Dart VM aborts the process —
+  /// the app "crashing" as it closes whenever a video was still open. Disposing the player is
+  /// what unhooks that callback, and a quit request is the last point at which it can be done.
+  Future<void> _releaseForExit() async {
+    final player = _player;
+    if (player == null || _isDisposed) return;
+
+    final source = _source;
+    final state = player.state;
+    // A load in flight has no player to finish on.
+    _sourceGeneration++;
+    _isOpening = false;
+    _hideTexture();
+    try {
+      // Bounded: a quit must not hang on a player that will not let go.
+      await _releasePlayer().timeout(_exitWait);
+    } on Object catch (error) {
+      debugPrint('fplayer: could not release the player before quitting: $error');
+    }
+
+    // Something else may still refuse the quit — an "unsaved changes" dialog. If this ever
+    // fires, the app is staying, and so should the video.
+    _revival?.cancel();
+    _revival = Timer(_exitWait, () => unawaited(_revive(source, state)));
+  }
+
+  static const _exitWait = Duration(seconds: 2);
+
+  /// Builds the player again after a quit that did not happen, where it had been.
+  Future<void> _revive(FPlayerSource? source, mk.PlayerState state) async {
+    _revival = null;
+    final config = _config;
+    if (_isDisposed || _player != null || config == null) return;
+    try {
+      await _build(config);
+      if (_isDisposed) return;
+      await _player?.setVolume(state.volume);
+      await _player?.setRate(state.rate);
+      if (source == null) return;
+
+      final autoPlay = _autoPlay;
+      _autoPlay = state.playing;
+      try {
+        await setSource(
+          source.copyWith(
+            startAt: state.position > Duration.zero ? state.position : source.startAt,
+          ),
+        );
+      } finally {
+        _autoPlay = autoPlay;
+      }
+    } on Object catch (error) {
+      _fail(
+        FPlayerError(
+          code: FPlayerErrorCode.unknown,
+          message: 'The player could not be restored: $error',
+          isRetryable: false,
+        ),
+      );
+    }
+  }
+
+  /// Takes the texture off screen ahead of it being torn down.
+  ///
+  /// A zero size is what makes the controller notify, and the surface drops the `Texture`
+  /// widget on the next frame.
+  void _hideTexture() {
+    _textureId = null;
+    _size = Size.zero;
+    _emit(
+      FEngineVideoSizeChanged(
+        size: _size,
+        rotationDegrees: _rotationDegrees,
+        pixelAspectRatio: _pixelAspectRatio,
+      ),
+    );
   }
 
   // region Media
@@ -938,16 +1046,8 @@ class FMediaKitEngine implements FPlaybackEngine {
     _textureId = next;
     if (next == null && wasShown) {
       // Taken off screen now, not at the next progress tick: the texture is about to be torn
-      // down, and it must not be on screen while that happens. A zero size is what makes the
-      // controller notify, and the surface drops the `Texture` widget on the next frame.
-      _size = Size.zero;
-      _emit(
-        FEngineVideoSizeChanged(
-          size: _size,
-          rotationDegrees: _rotationDegrees,
-          pixelAspectRatio: _pixelAspectRatio,
-        ),
-      );
+      // down, and it must not be on screen while that happens.
+      _hideTexture();
       return;
     }
     _emitVideoSize();
@@ -1010,6 +1110,15 @@ class FMediaKitEngine implements FPlaybackEngine {
   /// While playing the ticker reports positions anyway, and mpv's own several-per-second
   /// updates are left out.
   void _onPosition(Duration position) {
+    // mpv can say buffering is over before it has listed the tracks, and that report is dropped
+    // as the previous file's. Nothing repeats it, and the spinner stayed over a playing video:
+    // a position that moves says the same thing.
+    if (_isOpening &&
+        _hasReportedInitialized &&
+        position > Duration.zero &&
+        !(_player?.state.buffering ?? true)) {
+      _onBufferingChanged(false);
+    }
     if (_ticker == null) _emitProgress();
   }
 
@@ -1181,6 +1290,19 @@ class FMediaKitEngine implements FPlaybackEngine {
     // buffering flag from mpv's aftermath would put a spinner over it.
     if (_hasFailed && signal is! FEngineFailed) return;
     _signals.add(signal);
+  }
+}
+
+class _AppExitObserver with WidgetsBindingObserver {
+  _AppExitObserver(this._engine);
+
+  final FMediaKitEngine _engine;
+
+  /// Never the one to refuse: this only wants the moment.
+  @override
+  Future<AppExitResponse> didRequestAppExit() async {
+    await _engine._releaseForExit();
+    return AppExitResponse.exit;
   }
 }
 
