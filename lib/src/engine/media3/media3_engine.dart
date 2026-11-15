@@ -26,7 +26,8 @@ class FMedia3Engine implements FPlaybackEngine {
   int? _textureId;
 
   /// Which output the native side settled on. Decided there rather than here, because
-  /// `FVideoRenderMode.auto` needs to know what kind of device this is.
+  /// `FVideoRenderMode.auto` needs to know what kind of device this is — and, once the media is
+  /// read, what kind of video: it can move from the texture to the platform view while playing.
   bool _usesPlatformView = false;
   MethodChannel? _channel;
   StreamSubscription<Object?>? _eventSubscription;
@@ -368,6 +369,14 @@ class FMedia3Engine implements FPlaybackEngine {
           isOnline: map['isOnline'] as bool? ?? true,
           isWaitingForNetwork: map['isWaitingForNetwork'] as bool? ?? false,
         );
+
+      case 'renderMode':
+        // The native side moved the picture to a SurfaceView mid-flight — see
+        // `PlayerHost.moveToSurfaceView`. Its texture is gone with that.
+        if (map['mode'] != 'surfaceView' || _usesPlatformView) return null;
+        _usesPlatformView = true;
+        _textureId = null;
+        return const FEngineOutputChanged();
 
       case 'mediaSession':
         return FEngineMediaSessionChanged(isActive: map['isActive'] as bool? ?? false);

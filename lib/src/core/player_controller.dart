@@ -771,6 +771,11 @@ class FPlayerController extends ChangeNotifier with WidgetsBindingObserver {
       case FEngineMediaSessionChanged():
         _update(_value.copyWith(hasMediaSession: signal.isActive));
 
+      case FEngineOutputChanged():
+        // No field of the value changed: the texture and platform view ids are read off the
+        // engine, and the surface has to be told to read them again.
+        notifyListeners();
+
       case FEngineConnectivityChanged():
         final wasOnline = _value.isOnline;
         _update(
